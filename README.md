@@ -33,9 +33,9 @@ npm install
 npm run dev
 ```
 
-Opens the control panel. Pick a source, stack up some effects, tweak the params. Hit **Projector** to open the output on a second display, then drag the four corners to line it up with the sand.
+Opens a 3D view of the terrain with a control panel. Drag to orbit, scroll to zoom, and pick an effect from the dropdown — every param in the effect becomes a slider.
 
-Needs a WebGPU browser (Chrome or Edge).
+Needs a WebGPU browser — Chrome, Edge, or Safari 26+.
 
 ## How it works
 
@@ -49,6 +49,6 @@ Built against a Kinect for Xbox 360 (model 1414) via `libfreenect`. The bridge i
 
 ## Status
 
-Early. The design is settled and the toolchain is verified, but the runtime is still being built — treat the above as the shape of the thing, not a working install.
+Early, but it runs. Animated noise terrain in 3D with two effects. Sensor input, projector output, and calibration are not built yet.
 
 MIT.
