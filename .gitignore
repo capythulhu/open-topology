@@ -1,0 +1,10 @@
+node_modules/
+dist/
+
+# Local agent instructions (personal, not shared)
+CLAUDE.md
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

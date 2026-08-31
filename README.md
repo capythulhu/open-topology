@@ -1,0 +1,54 @@
+# OpenTopology
+
+A platform for writing shaders and algorithms that run on a live height map.
+
+OpenTopology is built for a physical AR sandbox (a depth camera and a projector aimed at a box of sand) but it does not need one. The height map can just as easily come from noise, an image, or a recording, so you can build and tune everything on a laptop. Either way you get elevation colors, contour lines, water flowing downhill, routes over the dunes, etc.
+
+## Effects
+
+Effects are written in [Slang](https://shader-slang.org), NVIDIA's shading language, and compiled to WGSL:
+
+```slang
+#include "lib/topology.slang"
+
+[Param(1.0, 200.0)] float contourInterval = 20.0;
+[Param(0.5, 6.0)]   float contourWidth = 1.5;
+
+[shader("fragment")]
+float4 effect(float2 uv: UV) : SV_Target {
+    float h = height(uv);
+    float line = contourMask(h, contourInterval / field.heightMm, contourWidth);
+    return float4(lerp(terrain(h), float3(0.0), line), 1.0);
+}
+```
+
+Drop that in `src/effects/` and it shows up in the UI with a slider for every param — no registration, no wiring.
+
+One effect is one file, and that includes the parts that are not shaders. A clustering pass and the shader that paints each cluster live together, because they are the same idea.
+
+## Running it
+
+```sh
+npm install
+npm run dev
+```
+
+Opens the control panel. Pick a source, stack up some effects, tweak the params. Hit **Projector** to open the output on a second display, then drag the four corners to line it up with the sand.
+
+Needs a WebGPU browser (Chrome or Edge).
+
+## How it works
+
+A **source** produces a height frame — noise, an image, a recording, or a Kinect. Effects run over it as a chain of GPU passes. Views render the result: a preview in the panel, and a calibrated top-down image for the projector.
+
+Everything here is a fixed-size grid, so everything runs on the GPU — including the parts that look like algorithms. Connected components is label propagation, shortest paths is wavefront relaxation.
+
+## Sensor
+
+Built against a Kinect for Xbox 360 (model 1414) via `libfreenect`. The bridge is a separate optional process; nothing in the app requires it. Recordings are the recommended way to develop away from the sandbox.
+
+## Status
+
+Early. The design is settled and the toolchain is verified, but the runtime is still being built — treat the above as the shape of the thing, not a working install.
+
+MIT.
