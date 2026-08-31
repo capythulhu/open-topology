@@ -34,7 +34,10 @@ void propagate(uint3 tid: SV_DispatchThreadID) {
             if (l != NONE) m = min(m, l);
         }
     }
-    labels[i] = m;
+
+    // Jump straight to the candidate's own label so chains collapse in log steps
+    // instead of one cell per iteration.
+    labels[i] = min(m, labels[m]);
 }
 
 [shader("fragment")]
