@@ -4,7 +4,7 @@ RWStructuredBuffer<float> heights;
 
 [Param(4.0, 0.5, 16.0)]  uniform float frequency;
 [Param(0.35, 0.0, 1.0)]  uniform float amplitude;
-[Param(0.15, 0.0, 1.0)]  uniform float speed;
+[Param(0.06, 0.0, 1.0)]  uniform float speed;
 [Param(4.0, 1.0, 6.0)]   uniform float octaves;
 
 float hash(float2 p) { return frac(sin(dot(p, float2(127.1, 311.7))) * 43758.5453); }
