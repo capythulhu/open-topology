@@ -23,7 +23,7 @@ static const float3 TERRAIN[6] = {
 };
 
 float3 terrain(float h) {
-    float t = saturate(h * 2.5 + 0.5) * 5.0;
+    float t = saturate(h + 0.5) * 5.0;
     uint i = uint(t);
     return lerp(TERRAIN[min(i, 4u)], TERRAIN[min(i + 1u, 5u)], frac(t));
 }

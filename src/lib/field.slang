@@ -7,6 +7,8 @@ struct ParamAttribute { float value; float lo; float hi; }
 [__AttributeUsage(_AttributeTargets.Function)]
 struct IterationsAttribute { int n; }
 
+// heightMm is what the -0.5..0.5 height range means in the real world, so
+// physical settings like a contour interval can be written in millimetres.
 struct Engine {
     uint2 size;
     float heightScale;
@@ -15,6 +17,7 @@ struct Engine {
     float pitch;
     float zoom;
     float aspect;
+    float heightMm;
 }
 
 ConstantBuffer<Engine> engine;

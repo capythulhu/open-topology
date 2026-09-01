@@ -51,7 +51,9 @@ Built against a Kinect for Xbox 360 (model 1414) via `libfreenect`. Nothing in t
 npm run kinect:setup
 ```
 
-That installs `libfreenect` if it is missing and builds `bridge/depth`, a small reader that streams 640x480 uint16 millimetre frames. Plug the Kinect in (it needs its 12V adapter, the bare USB cable will not do), pick **kinect** as the source, and set `basePlane` to the distance from the camera to empty sand and `range` to how far above that you want to fill the height scale.
+That installs `libfreenect` if it is missing and builds `bridge/depth`, a small reader that streams 640x480 uint16 millimetre frames. Plug the Kinect in (it needs its 12V adapter, the bare USB cable will not do) and pick **kinect** as the source. There is nothing to calibrate: whatever is in frame sets the scale, with the nearest readings at the top of the palette and the furthest at the bottom.
+
+Mount it at least half a metre back. A v1 returns nothing at all for anything closer, and the app will tell you when too little of the view is resolving.
 
 The dev server pipes frames straight to the page, so there is no second process to start and nothing to configure.
 

@@ -12,7 +12,7 @@ import * as normals from './effects/normals.slang';
 const SIZE = 256;
 const GROUPS = Math.ceil(SIZE / 8);
 const VERTICES = (SIZE - 1) * (SIZE - 1) * 6;
-const ENGINE_BYTES = 32;
+const ENGINE_BYTES = 48;
 const DEPTH_BYTES = 640 * 480 * 2;
 
 const SOURCES: Record<string, SlangModule> = { noise, kinect };
@@ -36,8 +36,12 @@ async function main() {
     size: DEPTH_BYTES,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
+  const bounds = device.createBuffer({
+    size: 16,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
 
-  const shared = { engine, heights, depth };
+  const shared = { engine, heights, depth, bounds };
   const build = (modules: Record<string, SlangModule>) =>
     Object.fromEntries(
       Object.entries(modules).map(([name, module]) => [name, new Program(device, module, shared, SIZE * SIZE, format)]),
@@ -67,7 +71,7 @@ async function main() {
       notice,
       actions:
         activeSource === 'kinect'
-          ? [{ label: 'set base plane from view', onClick: calibrate }]
+          ? []
           : [],
       groups: [
         { title: activeSource, params: sources[activeSource].params, onChange: (n, v) => sources[activeSource].setParam(n, v) },
@@ -81,26 +85,53 @@ async function main() {
     });
   };
 
-  // Nobody should have to guess a distance in millimetres. The base plane is
-  // whatever the sensor mostly sees — the empty sand — and the range is how far
-  // the nearest few percent rise above it.
-  const calibrate = () => {
-    if (!latest) return;
+  // Whatever is in frame defines the scale: nearest reading is the top of the
+  // palette, furthest is the bottom. Percentiles rather than raw min and max, so
+  // one stray pixel cannot set the range, and eased over time so a passing hand
+  // does not rescale the whole scene.
+  const boundsData = new Float32Array(4);
+  const scale = { near: 0, far: 0 };
 
-    const samples = new Uint16Array(latest.buffer);
+  const measure = (frame: Uint8Array<ArrayBuffer>) => {
+    const samples = new Uint16Array(frame.buffer);
+    const crop = (name: string) => sources.kinect.params.find((p) => p.name === name)?.value ?? 0.5;
+    const cx = crop('cropX') * 640;
+    const cy = crop('cropY') * 480;
+    const half = (crop('cropSize') * 480) / 2;
+
     const valid: number[] = [];
-    for (let i = 0; i < samples.length; i += 7) {
-      if (samples[i] > 0) valid.push(samples[i]);
+    let looked = 0;
+    for (let y = Math.max(0, cy - half) | 0; y < Math.min(480, cy + half); y += 3) {
+      for (let x = Math.max(0, cx - half) | 0; x < Math.min(640, cx + half); x += 3) {
+        const value = samples[y * 640 + x];
+        looked++;
+        if (value > 0) valid.push(value);
+      }
     }
-    if (valid.length < 100) return;
+
+    // Anything nearer than about half a metre returns nothing at all on a v1, so
+    // thin coverage almost always means the sensor is mounted too close.
+    const covered = looked > 0 ? valid.length / looked : 0;
+    const complaint =
+      covered < 0.25 ? `sensor is reading only ${Math.round(covered * 100)}% of the view — a kinect v1 sees nothing closer than ~50cm, try mounting it further back` : '';
+    if (complaint !== notice) {
+      notice = complaint;
+      draw();
+    }
+
+    if (valid.length < 64) return;
 
     valid.sort((a, b) => a - b);
-    const base = valid[valid.length >> 1];
-    const nearest = valid[Math.floor(valid.length * 0.02)];
+    const near = valid[Math.floor(valid.length * 0.02)];
+    const far = valid[Math.floor(valid.length * 0.98)];
 
-    sources.kinect.setParam('basePlane', base);
-    sources.kinect.setParam('range', Math.max(40, base - nearest));
-    draw();
+    const ease = scale.far === 0 ? 1 : 0.1;
+    scale.near += (near - scale.near) * ease;
+    scale.far += (far - scale.far) * ease;
+
+    boundsData[0] = scale.near;
+    boundsData[1] = scale.far;
+    device.queue.writeBuffer(bounds, 0, boundsData);
   };
 
   const selectSource = async (name: string) => {
@@ -109,6 +140,10 @@ async function main() {
     latest = null;
     activeSource = name;
     notice = '';
+
+    // Otherwise cells the new source never writes — sensor holes, mostly — keep
+    // showing the old source's terrain.
+    device.queue.writeBuffer(heights, 0, new Float32Array(SIZE * SIZE));
     draw();
 
     if (name !== 'kinect') return;
@@ -126,12 +161,14 @@ async function main() {
 
     stream = streamDepth(
       (frame) => {
-        if (!latest) {
+        const first = latest === null;
+        latest = frame;
+        device.queue.writeBuffer(depth, 0, frame);
+        measure(frame);
+        if (first) {
           notice = '';
           draw();
         }
-        latest = frame;
-        device.queue.writeBuffer(depth, 0, frame);
       },
       (reason) => {
         notice = reason;
@@ -175,6 +212,10 @@ async function main() {
     values[5] = camera.pitch;
     values[6] = camera.zoom;
     values[7] = width / height;
+    values[8] =
+      activeSource === 'kinect'
+        ? Math.max(1, scale.far - scale.near)
+        : (sources[activeSource].params.find((p) => p.name === 'relief')?.value ?? 200);
     device.queue.writeBuffer(engine, 0, engineData);
 
     const effect = effects[activeEffect];

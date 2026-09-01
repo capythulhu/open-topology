@@ -3,31 +3,35 @@
 static const uint DEPTH_WIDTH = 640;
 static const uint DEPTH_HEIGHT = 480;
 
+// Filled in from whatever is actually in frame, so there is nothing to calibrate.
+struct Bounds { float near; float far; }
+
 RWStructuredBuffer<float> heights;
 StructuredBuffer<uint> depth;
+ConstantBuffer<Bounds> bounds;
 
-[Param(1500.0, 500.0, 4000.0)] uniform float basePlane;
-[Param(300.0, 20.0, 1500.0)]   uniform float range;
-[Param(0.35, 0.0, 1.0)]        uniform float amplitude;
-[Param(0.6, 0.0, 0.95)]        uniform float smoothing;
-[Param(0.5, 0.0, 1.0)]         uniform float cropX;
-[Param(0.5, 0.0, 1.0)]         uniform float cropY;
-[Param(0.9, 0.1, 1.0)]         uniform float cropSize;
+[Param(0.6, 0.0, 0.95)] uniform float smoothing;
+[Param(0.5, 0.0, 1.0)]  uniform float cropX;
+[Param(0.5, 0.0, 1.0)]  uniform float cropY;
+[Param(0.9, 0.1, 1.0)]  uniform float cropSize;
+
+uint indexOf(int2 p) {
+    int2 q = clamp(p, int2(0), int2(DEPTH_WIDTH - 1, DEPTH_HEIGHT - 1));
+    return uint(q.y) * DEPTH_WIDTH + uint(q.x);
+}
 
 // Frames arrive as little-endian uint16 millimetres, two samples per word.
-uint depthAt(int2 p) {
-    int2 q = clamp(p, int2(0), int2(DEPTH_WIDTH - 1, DEPTH_HEIGHT - 1));
-    uint i = uint(q.y) * DEPTH_WIDTH + uint(q.x);
-    uint word = depth[i >> 1];
-    return (i & 1u) == 0u ? (word & 0xFFFFu) : (word >> 16);
+uint millimetres(int2 p) {
+    uint i = indexOf(p);
+    uint packed = depth[i >> 1];
+    return (i & 1u) == 0u ? (packed & 0xFFFFu) : (packed >> 16);
 }
 
 // The IR emitter sits beside the camera, so steep slopes and box walls leave
-// holes that read as zero. Widen the search until something valid turns up.
-// Returns 0 when there is nothing to be had — shiny metal reflects the pattern
-// away entirely and never resolves at any radius.
-float millimetresAt(int2 p) {
-    uint here = depthAt(p);
+// holes that read as zero. Widen the search, and report 0 if nothing resolves —
+// shiny surfaces reflect the pattern away entirely and never will.
+float filled(int2 p) {
+    uint here = millimetres(p);
     if (here != 0u) return float(here);
 
     for (int r = 1; r <= 6; r++) {
@@ -35,7 +39,7 @@ float millimetresAt(int2 p) {
         float found = 0.0;
         for (int dy = -r; dy <= r; dy += r) {
             for (int dx = -r; dx <= r; dx += r) {
-                uint n = depthAt(p + int2(dx, dy));
+                uint n = millimetres(p + int2(dx, dy));
                 if (n != 0u) { sum += float(n); found += 1.0; }
             }
         }
@@ -51,12 +55,14 @@ void generate(uint3 tid: SV_DispatchThreadID) {
 
     float2 uv = (float2(tid.xy) + 0.5) / float2(engine.size);
     float2 center = float2(cropX * float(DEPTH_WIDTH), cropY * float(DEPTH_HEIGHT));
-    float2 source = center + (uv - 0.5) * cropSize * float(DEPTH_HEIGHT);
+    int2 p = int2(center + (uv - 0.5) * cropSize * float(DEPTH_HEIGHT));
 
-    float millimetres = millimetresAt(int2(source));
-    if (millimetres == 0.0) return;
+    float live = filled(p);
+    if (live == 0.0) return;
 
-    float target = (saturate((basePlane - millimetres) / range) - 0.5) * amplitude;
+    // Nearest reading in frame is the top of the palette, furthest is the bottom.
+    float span = max(bounds.far - bounds.near, 1.0);
+    float target = clamp((bounds.far - live) / span, 0.0, 1.0) - 0.5;
 
     uint i = cellIndex(tid.xy);
     heights[i] = lerp(target, heights[i], smoothing);

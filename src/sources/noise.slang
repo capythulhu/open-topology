@@ -3,7 +3,8 @@
 RWStructuredBuffer<float> heights;
 
 [Param(4.0, 0.5, 16.0)]  uniform float frequency;
-[Param(0.35, 0.0, 1.0)]  uniform float amplitude;
+[Param(0.7, 0.0, 1.0)]   uniform float amplitude;
+[Param(200.0, 20.0, 600.0)] uniform float relief;
 [Param(0.06, 0.0, 1.0)]  uniform float speed;
 [Param(4.0, 1.0, 6.0)]   uniform float octaves;
 
