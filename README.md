@@ -33,15 +33,13 @@ npm install
 npm run dev
 ```
 
-Opens a 3D view of the terrain with a control panel. Drag to orbit, scroll to zoom, and pick an effect from the dropdown — every param in the effect becomes a slider.
-
-Needs a WebGPU browser — Chrome, Edge, or Safari 26+.
+Opens a 3D view of the terrain (WebGPU required) with a control panel. Drag to orbit, scroll to zoom, and pick an effect from the dropdown. Every param in the effect becomes a slider.
 
 ## How it works
 
-A **source** produces a height frame — noise, an image, a recording, or a Kinect. Effects run over it as a chain of GPU passes. Views render the result: a preview in the panel, and a calibrated top-down image for the projector.
+A **source** produces a height frame: noise, an image, a recording, or a Kinect. Effects run over it as a chain of GPU passes. Views render the result: a preview in the panel, and a calibrated top-down image for the projector.
 
-Everything here is a fixed-size grid, so everything runs on the GPU — including the parts that look like algorithms. Connected components is label propagation, shortest paths is wavefront relaxation.
+Everything here is a fixed-size grid, so everything runs on the GPU. Connected components is label propagation, shortest paths is wavefront relaxation.
 
 ## Sensor
 
