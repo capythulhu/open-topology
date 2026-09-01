@@ -9,16 +9,18 @@ OpenTopology is built for a physical AR sandbox (a depth camera and a projector 
 Effects are written in [Slang](https://shader-slang.org), NVIDIA's shading language, and compiled to WGSL:
 
 ```slang
-#include "lib/topology.slang"
+#include "../lib/render.slang"
+#include "../lib/color.slang"
 
-[Param(1.0, 200.0)] float contourInterval = 20.0;
-[Param(0.5, 6.0)]   float contourWidth = 1.5;
+[Param(0.05, 0.01, 0.4)] uniform float interval;
+[Param(1.5, 0.5, 6.0)]   uniform float width;
 
 [shader("fragment")]
-float4 effect(float2 uv: UV) : SV_Target {
-    float h = height(uv);
-    float line = contourMask(h, contourInterval / field.heightMm, contourWidth);
-    return float4(lerp(terrain(h), float3(0.0), line), 1.0);
+float4 fragmentMain(Varying v) : SV_Target {
+    float h = heightSmooth(v.uv);
+    float line = contourMask(h, interval, width);
+    float3 color = lerp(terrain(h), float3(0.04), line);
+    return float4(color * shading(cellOf(v.uv)), 1.0);
 }
 ```
 
@@ -47,6 +49,6 @@ Built against a Kinect for Xbox 360 (model 1414) via `libfreenect`. The bridge i
 
 ## Status
 
-Early, but it runs. Animated noise terrain in 3D with two effects. Sensor input, projector output, and calibration are not built yet.
+Early, but it runs. Animated noise terrain in 3D with three effects. Sensor input, projector output, and calibration are not built yet.
 
 MIT.
