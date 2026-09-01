@@ -53,7 +53,9 @@ npm run kinect:setup
 
 That installs `libfreenect` if it is missing and builds `bridge/depth`, a small reader that streams 640x480 uint16 millimetre frames. Plug the Kinect in (it needs its 12V adapter, the bare USB cable will not do), pick **kinect** as the source, and set `basePlane` to the distance from the camera to empty sand and `range` to how far above that you want to fill the height scale.
 
-The dev server pipes frames straight to the page, so there is no second process to start and nothing to configure. Only one reader can hold the device at a time.
+The dev server pipes frames straight to the page, so there is no second process to start and nothing to configure.
+
+Only one reader can hold the device at a time, so a second dev server or a stray tab will take it over and the other one gets **another reader already has the kinect**. If the sensor stalls instead, the reader resets it over USB and retries, which takes about fifteen seconds before it gives up and asks you to replug.
 
 ## Status
 

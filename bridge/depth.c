@@ -3,9 +3,11 @@
 
 #include <libfreenect/libfreenect.h>
 #include <libusb-1.0/libusb.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/file.h>
 #include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
@@ -14,9 +16,21 @@
 #define KINECT_VENDOR 0x045e
 #define KINECT_CAMERA 0x02ae
 #define KINECT_MOTOR 0x02b0
+#define LOCK_PATH "/tmp/open-topology-kinect.lock"
 
 static volatile sig_atomic_t running = 1;
 static volatile sig_atomic_t frames = 0;
+
+// Two readers on one kinect do not fail cleanly: the second opens fine and then
+// silently receives nothing, which looks exactly like broken hardware. A lock
+// turns thirty seconds of confusion into one accurate line.
+static int lock_device(void) {
+    int fd = open(LOCK_PATH, O_CREAT | O_RDWR, 0644);
+    if (fd < 0) return 0;
+    if (flock(fd, LOCK_EX | LOCK_NB) == 0) return 1;
+    close(fd);
+    return -1;
+}
 
 static void stop(int signal) {
     (void)signal;
@@ -104,6 +118,11 @@ int main(void) {
     signal(SIGINT, stop);
     signal(SIGTERM, stop);
     signal(SIGPIPE, stop);
+
+    if (lock_device() < 0) {
+        fprintf(stderr, "another reader already has the kinect — close the other tab or dev server using it\n");
+        return 5;
+    }
 
     if (stream(0) > 0 || !running) return 0;
 
