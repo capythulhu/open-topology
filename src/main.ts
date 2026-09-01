@@ -106,6 +106,7 @@ async function main() {
   const selectSource = async (name: string) => {
     stream?.stop();
     stream = null;
+    latest = null;
     activeSource = name;
     notice = '';
     draw();
@@ -118,8 +119,17 @@ async function main() {
       return;
     }
 
+    // A wedged sensor is reset over usb before it streams, which takes a good
+    // fifteen seconds — say so rather than look hung.
+    notice = 'waiting for the kinect...';
+    draw();
+
     stream = streamDepth(
       (frame) => {
+        if (!latest) {
+          notice = '';
+          draw();
+        }
         latest = frame;
         device.queue.writeBuffer(depth, 0, frame);
       },

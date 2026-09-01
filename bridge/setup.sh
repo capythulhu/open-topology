@@ -31,6 +31,6 @@ esac
 [ -f "$PREFIX/include/libfreenect/libfreenect.h" ] || fail "libfreenect headers not found under $PREFIX"
 
 info "building bridge/depth..."
-cc bridge/depth.c -o bridge/depth -I"$PREFIX/include" -L"$PREFIX/lib" -lfreenect -O2 -Wall
+cc bridge/depth.c -o bridge/depth -I"$PREFIX/include" -L"$PREFIX/lib" -lfreenect -lusb-1.0 -O2 -Wall
 
 info "done. plug in the kinect (it needs its 12V adapter), then pick 'kinect' as the source."
