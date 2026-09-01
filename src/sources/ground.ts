@@ -1,5 +1,7 @@
 export type Ground = { a: number; b: number; c: number; spread: number };
 
+export type Reading = { spread: number; coverage: number };
+
 export type Crop = { x: number; y: number; size: number };
 
 const WIDTH = 640;
@@ -8,6 +10,11 @@ const HEIGHT = 480;
 // Anything this far from the surface is background — a wall, or the floor beyond
 // the box — not something standing on it, and must not set the vertical scale.
 const BACKGROUND_MM = 1000;
+
+// The range never closes below this. Measured temporal noise on a static scene
+// is 5mm median and 17mm at the 97th percentile, so a range anywhere near that
+// hands the whole palette to noise the moment the surface is genuinely flat.
+const QUIETEST_MM = 80;
 
 function solve(points: Float64Array, count: number): Ground | null {
   let sxx = 0, sxy = 0, syy = 0, sx = 0, sy = 0, sz = 0, sxz = 0, syz = 0;
@@ -99,6 +106,39 @@ export function fitGround(samples: Uint16Array, crop: Crop): { ground: Ground | 
     .sort((p, q) => p - q);
   if (onSurface.length < 100) return { ground: null, coverage };
 
-  plane.spread = Math.max(onSurface[Math.floor(onSurface.length * 0.99)], 20);
+  plane.spread = Math.max(onSurface[Math.floor(onSurface.length * 0.97)], QUIETEST_MM);
   return { ground: plane, coverage };
+}
+
+/**
+ * How far the frame departs from a captured reference. Same vertical scale as the
+ * plane fit, but the baseline is per pixel, so lens distortion and fixed-pattern
+ * depth error cancel along with the tilt.
+ */
+export function spreadAgainst(samples: Uint16Array, reference: Uint16Array, crop: Crop): Reading {
+  const cx = crop.x * WIDTH;
+  const cy = crop.y * HEIGHT;
+  const half = (crop.size * HEIGHT) / 2;
+
+  const deviations: number[] = [];
+  let looked = 0;
+  let seen = 0;
+
+  for (let y = Math.max(0, cy - half) | 0; y < Math.min(HEIGHT, cy + half); y += 3) {
+    for (let x = Math.max(0, cx - half) | 0; x < Math.min(WIDTH, cx + half); x += 3) {
+      const i = y * WIDTH + x;
+      looked++;
+      if (samples[i] === 0) continue;
+      seen++;
+      if (reference[i] === 0) continue;
+      const deviation = Math.abs(reference[i] - samples[i]);
+      if (deviation < BACKGROUND_MM) deviations.push(deviation);
+    }
+  }
+
+  const coverage = looked > 0 ? seen / looked : 0;
+  if (deviations.length < 100) return { spread: 0, coverage };
+
+  deviations.sort((p, q) => p - q);
+  return { spread: Math.max(deviations[Math.floor(deviations.length * 0.97)], QUIETEST_MM), coverage };
 }

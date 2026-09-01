@@ -2,7 +2,7 @@ import { createCamera } from './camera';
 import { createDepth, initGpu } from './gpu';
 import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
-import { fitGround } from './sources/ground';
+import { fitGround, spreadAgainst } from './sources/ground';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
 import * as kinect from './sources/kinect.slang';
@@ -38,11 +38,15 @@ async function main() {
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
   const groundBuffer = device.createBuffer({
-    size: 16,
+    size: 32,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
+  const reference = device.createBuffer({
+    size: DEPTH_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
 
-  const shared = { engine, heights, depth, ground: groundBuffer };
+  const shared = { engine, heights, depth, ground: groundBuffer, reference };
   const build = (modules: Record<string, SlangModule>) =>
     Object.fromEntries(
       Object.entries(modules).map(([name, module]) => [name, new Program(device, module, shared, SIZE * SIZE, format)]),
@@ -71,9 +75,14 @@ async function main() {
       },
       notice,
       actions:
-        activeSource === 'kinect'
+        activeSource !== 'kinect'
           ? []
-          : [],
+          : captured
+            ? [
+                { label: 'recalibrate on the flat surface', onClick: calibrate },
+                { label: 'clear calibration', onClick: clearCalibration },
+              ]
+            : [{ label: 'calibrate on the flat surface', onClick: calibrate }],
       groups: [
         { title: activeSource, params: sources[activeSource].params, onChange: (n, v) => sources[activeSource].setParam(n, v) },
         { title: activeEffect, params: effects[activeEffect].params, onChange: (n, v) => effects[activeEffect].setParam(n, v) },
@@ -88,17 +97,19 @@ async function main() {
 
   // Height is read against the plane that best fits the frame, refitted as it
   // changes, so nothing needs calibrating and a tilted sensor cancels out.
-  const groundData = new Float32Array(4);
+  const groundData = new Float32Array(8);
   const ground = { a: 0, b: 0, c: 0, spread: 0 };
+  let captured: Uint16Array | null = null;
 
   const measure = (frame: Uint8Array<ArrayBuffer>) => {
     const samples = new Uint16Array(frame.buffer);
     const value = (name: string) => sources.kinect.params.find((p) => p.name === name)?.value ?? 0.5;
-    const { ground: fitted, coverage } = fitGround(samples, {
-      x: value('cropX'),
-      y: value('cropY'),
-      size: value('cropSize'),
-    });
+    const crop = { x: value('cropX'), y: value('cropY'), size: value('cropSize') };
+    const reading = captured
+      ? spreadAgainst(samples, captured, crop)
+      : fitGround(samples, crop);
+    const coverage = reading.coverage;
+    const fitted = 'ground' in reading ? reading.ground : { a: 0, b: 0, c: 0, spread: reading.spread };
 
     // Anything nearer than about half a metre returns nothing at all on a v1, so
     // thin coverage almost always means the sensor is mounted too close.
@@ -110,7 +121,7 @@ async function main() {
       notice = complaint;
       draw();
     }
-    if (!fitted) return;
+    if (!fitted || fitted.spread === 0) return;
 
     const ease = ground.spread === 0 ? 1 : 0.1;
     ground.a += (fitted.a - ground.a) * ease;
@@ -122,7 +133,24 @@ async function main() {
     groundData[1] = ground.b;
     groundData[2] = ground.c;
     groundData[3] = ground.spread;
+    groundData[4] = captured ? 1 : 0;
     device.queue.writeBuffer(groundBuffer, 0, groundData);
+  };
+
+  // Optional: the plane fit already works untouched. Capturing an empty, flat
+  // surface additionally cancels whatever the sensor gets wrong pixel by pixel.
+  const calibrate = () => {
+    if (!latest) return;
+    captured = new Uint16Array(latest.slice().buffer);
+    device.queue.writeBuffer(reference, 0, latest);
+    ground.spread = 0;
+    draw();
+  };
+
+  const clearCalibration = () => {
+    captured = null;
+    ground.spread = 0;
+    draw();
   };
 
   const selectSource = async (name: string) => {

@@ -55,6 +55,8 @@ That installs `libfreenect` if it is missing and builds `bridge/depth`, a small 
 
 Mount it at least half a metre back. A v1 returns nothing at all for anything closer, and the app will tell you when too little of the view is resolving.
 
+It works with nothing configured, by fitting a plane to whatever it sees. Pressing **calibrate on the flat surface** with the box empty does better still: the captured frame becomes a per-pixel reference, which cancels the sensor's own lens and pattern error along with the tilt.
+
 The dev server pipes frames straight to the page, so there is no second process to start and nothing to configure.
 
 Only one reader can hold the device at a time, so a second dev server or a stray tab will take it over and the other one gets **another reader already has the kinect**. If the sensor stalls instead, the reader resets it over USB and retries, which takes about fifteen seconds before it gives up and asks you to replug.
