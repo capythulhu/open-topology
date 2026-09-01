@@ -9,5 +9,5 @@ float4 fragmentMain(Varying v) : SV_Target {
     float h = heightSmooth(v.uv);
     float line = contourMask(h, interval, width);
     float3 color = lerp(terrain(h), float3(0.04), line);
-    return float4(color * shading(cellOf(v.uv)), 1.0);
+    return float4(color * shading(v.uv), 1.0);
 }

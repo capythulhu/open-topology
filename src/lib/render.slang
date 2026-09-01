@@ -7,12 +7,6 @@ StructuredBuffer<float> heights;
 
 float heightAt(int2 p) { int2 q = clampCell(p); return heights[q.y * int(engine.size.x) + q.x]; }
 
-float3 normalAt(int2 p) {
-    float gx = (heightAt(p + int2(1, 0)) - heightAt(p + int2(-1, 0))) * float(engine.size.x) * 0.5;
-    float gz = (heightAt(p + int2(0, 1)) - heightAt(p + int2(0, -1))) * float(engine.size.y) * 0.5;
-    return normalize(float3(-gx * engine.heightScale, 1.0, -gz * engine.heightScale));
-}
-
 struct Varying {
     float4 clip : SV_Position;
     float2 uv : UV;
@@ -43,15 +37,26 @@ Varying vertexMain(uint vid: SV_VertexID) {
     return o;
 }
 
-int2 cellOf(float2 uv) { return clampCell(int2(uv * float2(engine.size))); }
+// uv comes from the vertex shader as p / (size - 1), so undoing it uses the same
+// span. Sampling against size instead lands half a cell off the geometry.
+int2 cellOf(float2 uv) { return clampCell(int2(round(uv * float2(engine.size - 1)))); }
 
 float heightSmooth(float2 uv) {
-    float2 p = uv * float2(engine.size) - 0.5;
+    float2 p = uv * float2(engine.size - 1);
     int2 i = int2(floor(p));
     float2 f = frac(p);
     float top = lerp(heightAt(i), heightAt(i + int2(1, 0)), f.x);
     float bottom = lerp(heightAt(i + int2(0, 1)), heightAt(i + int2(1, 1)), f.x);
     return lerp(top, bottom, f.y);
+}
+
+// Per pixel off the interpolated height, so shading matches the surface the
+// vertex shader actually built rather than stepping once per cell.
+float3 normalAt(float2 uv) {
+    float2 e = 1.0 / float2(engine.size - 1);
+    float gx = (heightSmooth(uv + float2(e.x, 0.0)) - heightSmooth(uv - float2(e.x, 0.0))) / (2.0 * e.x);
+    float gz = (heightSmooth(uv + float2(0.0, e.y)) - heightSmooth(uv - float2(0.0, e.y))) / (2.0 * e.y);
+    return normalize(float3(-gx * engine.heightScale, 1.0, -gz * engine.heightScale));
 }
 
 // Dividing by fwidth keeps a contour one pixel wide whatever the slope does.
@@ -61,8 +66,8 @@ float contourMask(float h, float interval, float width) {
     return 1.0 - smoothstep(width - 0.5, width + 0.5, d);
 }
 
-float shading(int2 p) {
-    return 0.35 + 0.65 * saturate(dot(normalAt(p), normalize(float3(0.35, 1.0, 0.25))));
+float shading(float2 uv) {
+    return 0.35 + 0.65 * saturate(dot(normalAt(uv), normalize(float3(0.35, 1.0, 0.25))));
 }
 
 #endif

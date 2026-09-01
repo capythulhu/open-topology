@@ -74,7 +74,7 @@ void measure(uint3 tid: SV_DispatchThreadID) {
 [shader("fragment")]
 float4 fragmentMain(Varying v) : SV_Target {
     int2 p = cellOf(v.uv);
-    float shade = 0.35 + 0.65 * saturate(dot(normalAt(p), normalize(float3(0.35, 1.0, 0.25))));
+    float shade = shading(v.uv);
 
     uint root = labelAt(p);
     if (root == NONE) return float4(float3(0.13, 0.14, 0.17) * shade * 1.6, 1.0);
