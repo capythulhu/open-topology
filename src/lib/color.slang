@@ -13,4 +13,19 @@ float3 placeColor(float2 uv, float saturation) {
     return hsv2rgb(float3(frac(uv.x * 1.3 + uv.y * 2.1), saturation, 1.0));
 }
 
+static const float3 TERRAIN[6] = {
+    float3(0.05, 0.16, 0.32),
+    float3(0.16, 0.45, 0.60),
+    float3(0.85, 0.79, 0.62),
+    float3(0.40, 0.56, 0.30),
+    float3(0.45, 0.40, 0.33),
+    float3(0.93, 0.93, 0.91),
+};
+
+float3 terrain(float h) {
+    float t = saturate(h * 2.5 + 0.5) * 5.0;
+    uint i = uint(t);
+    return lerp(TERRAIN[min(i, 4u)], TERRAIN[min(i + 1u, 5u)], frac(t));
+}
+
 #endif

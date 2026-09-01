@@ -45,4 +45,24 @@ Varying vertexMain(uint vid: SV_VertexID) {
 
 int2 cellOf(float2 uv) { return clampCell(int2(uv * float2(engine.size))); }
 
+float heightSmooth(float2 uv) {
+    float2 p = uv * float2(engine.size) - 0.5;
+    int2 i = int2(floor(p));
+    float2 f = frac(p);
+    float top = lerp(heightAt(i), heightAt(i + int2(1, 0)), f.x);
+    float bottom = lerp(heightAt(i + int2(0, 1)), heightAt(i + int2(1, 1)), f.x);
+    return lerp(top, bottom, f.y);
+}
+
+// Dividing by fwidth keeps a contour one pixel wide whatever the slope does.
+float contourMask(float h, float interval, float width) {
+    float f = h / interval;
+    float d = abs(frac(f - 0.5) - 0.5) / fwidth(f);
+    return 1.0 - smoothstep(width - 0.5, width + 0.5, d);
+}
+
+float shading(int2 p) {
+    return 0.35 + 0.65 * saturate(dot(normalAt(p), normalize(float3(0.35, 1.0, 0.25))));
+}
+
 #endif

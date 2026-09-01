@@ -4,6 +4,7 @@ import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
 import * as noise from './sources/noise.slang';
 import * as clusters from './effects/clusters.slang';
+import * as contours from './effects/contours.slang';
 import * as normals from './effects/normals.slang';
 
 const SIZE = 256;
@@ -11,7 +12,7 @@ const GROUPS = Math.ceil(SIZE / 8);
 const VERTICES = (SIZE - 1) * (SIZE - 1) * 6;
 const ENGINE_BYTES = 32;
 
-const EFFECTS: Record<string, SlangModule> = { normals, clusters };
+const EFFECTS: Record<string, SlangModule> = { contours, normals, clusters };
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
@@ -34,7 +35,7 @@ async function main() {
     Object.entries(EFFECTS).map(([name, mod]) => [name, new Program(device, mod, shared, SIZE * SIZE, format)]),
   );
 
-  let active = 'normals';
+  let active = 'contours';
   const view = { heightScale: 0.9 };
 
   const draw = () => {
