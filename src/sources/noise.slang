@@ -23,12 +23,14 @@ float valueNoise(float2 p) {
 float fbm(float2 p, int octaveCount) {
     float sum = 0.0;
     float weight = 0.5;
+    float total = 0.0;
     for (int i = 0; i < octaveCount; i++) {
         sum += valueNoise(p) * weight;
+        total += weight;
         p *= 2.0;
         weight *= 0.5;
     }
-    return sum;
+    return sum / total;
 }
 
 [shader("compute")]
