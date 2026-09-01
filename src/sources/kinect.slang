@@ -3,12 +3,13 @@
 static const uint DEPTH_WIDTH = 640;
 static const uint DEPTH_HEIGHT = 480;
 
-// Filled in from whatever is actually in frame, so there is nothing to calibrate.
-struct Bounds { float near; float far; }
+// A plane fitted to whatever is in frame, plus the spread of the deviations from
+// it. Fitted per frame, so there is nothing to calibrate.
+struct Ground { float a; float b; float c; float spread; }
 
 RWStructuredBuffer<float> heights;
 StructuredBuffer<uint> depth;
-ConstantBuffer<Bounds> bounds;
+ConstantBuffer<Ground> ground;
 
 [Param(1.0, 0.0, 3.0)]  uniform float height;
 [Param(0.6, 0.0, 0.95)] uniform float smoothing;
@@ -61,10 +62,11 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float live = filled(p);
     if (live == 0.0) return;
 
-    // Nearest reading in frame is the top of the palette, furthest is the bottom.
-    // Scaling about the midpoint exaggerates relief without shifting the surface.
-    float span = max(bounds.far - bounds.near, 1.0);
-    float target = (clamp((bounds.far - live) / span, 0.0, 1.0) - 0.5) * height;
+    // Height is distance from the fitted ground, not from the camera. A tilted
+    // sensor spreads raw depth across a metre of range and swamps everything on
+    // the surface; measuring against the plane cancels that entirely.
+    float plane = ground.a * float(p.x) + ground.b * float(p.y) + ground.c;
+    float target = clamp((plane - live) / max(ground.spread, 1.0), -1.0, 1.0) * 0.5 * height;
 
     uint i = cellIndex(tid.xy);
     heights[i] = lerp(target, heights[i], smoothing);

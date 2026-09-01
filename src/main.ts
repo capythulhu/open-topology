@@ -2,6 +2,7 @@ import { createCamera } from './camera';
 import { createDepth, initGpu } from './gpu';
 import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
+import { fitGround } from './sources/ground';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
 import * as kinect from './sources/kinect.slang';
@@ -36,12 +37,12 @@ async function main() {
     size: DEPTH_BYTES,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
-  const bounds = device.createBuffer({
+  const groundBuffer = device.createBuffer({
     size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
-  const shared = { engine, heights, depth, bounds };
+  const shared = { engine, heights, depth, ground: groundBuffer };
   const build = (modules: Record<string, SlangModule>) =>
     Object.fromEntries(
       Object.entries(modules).map(([name, module]) => [name, new Program(device, module, shared, SIZE * SIZE, format)]),
@@ -85,53 +86,43 @@ async function main() {
     });
   };
 
-  // Whatever is in frame defines the scale: nearest reading is the top of the
-  // palette, furthest is the bottom. Percentiles rather than raw min and max, so
-  // one stray pixel cannot set the range, and eased over time so a passing hand
-  // does not rescale the whole scene.
-  const boundsData = new Float32Array(4);
-  const scale = { near: 0, far: 0 };
+  // Height is read against the plane that best fits the frame, refitted as it
+  // changes, so nothing needs calibrating and a tilted sensor cancels out.
+  const groundData = new Float32Array(4);
+  const ground = { a: 0, b: 0, c: 0, spread: 0 };
 
   const measure = (frame: Uint8Array<ArrayBuffer>) => {
     const samples = new Uint16Array(frame.buffer);
-    const crop = (name: string) => sources.kinect.params.find((p) => p.name === name)?.value ?? 0.5;
-    const cx = crop('cropX') * 640;
-    const cy = crop('cropY') * 480;
-    const half = (crop('cropSize') * 480) / 2;
-
-    const valid: number[] = [];
-    let looked = 0;
-    for (let y = Math.max(0, cy - half) | 0; y < Math.min(480, cy + half); y += 3) {
-      for (let x = Math.max(0, cx - half) | 0; x < Math.min(640, cx + half); x += 3) {
-        const value = samples[y * 640 + x];
-        looked++;
-        if (value > 0) valid.push(value);
-      }
-    }
+    const value = (name: string) => sources.kinect.params.find((p) => p.name === name)?.value ?? 0.5;
+    const { ground: fitted, coverage } = fitGround(samples, {
+      x: value('cropX'),
+      y: value('cropY'),
+      size: value('cropSize'),
+    });
 
     // Anything nearer than about half a metre returns nothing at all on a v1, so
     // thin coverage almost always means the sensor is mounted too close.
-    const covered = looked > 0 ? valid.length / looked : 0;
     const complaint =
-      covered < 0.25 ? `sensor is reading only ${Math.round(covered * 100)}% of the view — a kinect v1 sees nothing closer than ~50cm, try mounting it further back` : '';
+      coverage < 0.25
+        ? `sensor is reading only ${Math.round(coverage * 100)}% of the view — a kinect v1 sees nothing closer than ~50cm, try mounting it further back`
+        : '';
     if (complaint !== notice) {
       notice = complaint;
       draw();
     }
+    if (!fitted) return;
 
-    if (valid.length < 64) return;
+    const ease = ground.spread === 0 ? 1 : 0.1;
+    ground.a += (fitted.a - ground.a) * ease;
+    ground.b += (fitted.b - ground.b) * ease;
+    ground.c += (fitted.c - ground.c) * ease;
+    ground.spread += (fitted.spread - ground.spread) * ease;
 
-    valid.sort((a, b) => a - b);
-    const near = valid[Math.floor(valid.length * 0.02)];
-    const far = valid[Math.floor(valid.length * 0.98)];
-
-    const ease = scale.far === 0 ? 1 : 0.1;
-    scale.near += (near - scale.near) * ease;
-    scale.far += (far - scale.far) * ease;
-
-    boundsData[0] = scale.near;
-    boundsData[1] = scale.far;
-    device.queue.writeBuffer(bounds, 0, boundsData);
+    groundData[0] = ground.a;
+    groundData[1] = ground.b;
+    groundData[2] = ground.c;
+    groundData[3] = ground.spread;
+    device.queue.writeBuffer(groundBuffer, 0, groundData);
   };
 
   const selectSource = async (name: string) => {
@@ -217,7 +208,7 @@ async function main() {
     const param = (name: string) => sources[activeSource].params.find((p) => p.name === name)?.value;
     values[8] =
       activeSource === 'kinect'
-        ? Math.max(1, (scale.far - scale.near) / Math.max(param('height') ?? 1, 0.01))
+        ? Math.max(1, (2 * ground.spread) / Math.max(param('height') ?? 1, 0.01))
         : (param('relief') ?? 200);
     device.queue.writeBuffer(engine, 0, engineData);
 
