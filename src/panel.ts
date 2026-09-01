@@ -6,6 +6,17 @@ export type Group = {
   onChange: (name: string, value: number) => void;
 };
 
+export type Panel = {
+  sources: string[];
+  source: string;
+  onSource: (name: string) => void;
+  effects: string[];
+  effect: string;
+  onEffect: (name: string) => void;
+  groups: Group[];
+  notice: string;
+};
+
 function slider(param: Param, onChange: (name: string, value: number) => void): HTMLElement {
   const row = document.createElement('label');
   row.className = 'row';
@@ -14,7 +25,8 @@ function slider(param: Param, onChange: (name: string, value: number) => void): 
   name.textContent = param.name;
 
   const readout = document.createElement('output');
-  readout.textContent = param.value.toFixed(2);
+  const show = (value: number) => (readout.textContent = value.toFixed(Math.abs(value) >= 100 ? 0 : 2));
+  show(param.value);
 
   const input = document.createElement('input');
   input.type = 'range';
@@ -24,7 +36,7 @@ function slider(param: Param, onChange: (name: string, value: number) => void): 
   input.value = String(param.value);
   input.addEventListener('input', () => {
     const value = Number(input.value);
-    readout.textContent = value.toFixed(2);
+    show(value);
     onChange(param.name, value);
   });
 
@@ -35,33 +47,48 @@ function slider(param: Param, onChange: (name: string, value: number) => void): 
   return row;
 }
 
-export function renderPanel(
-  root: HTMLElement,
-  effects: string[],
-  active: string,
-  onSelect: (name: string) => void,
-  groups: Group[],
-) {
+function picker(label: string, options: string[], active: string, onPick: (name: string) => void): HTMLElement {
+  const wrap = document.createElement('label');
+  wrap.className = 'pick';
+
+  const caption = document.createElement('span');
+  caption.textContent = label;
+
+  const select = document.createElement('select');
+  for (const option of options) {
+    const item = document.createElement('option');
+    item.value = option;
+    item.textContent = option;
+    item.selected = option === active;
+    select.append(item);
+  }
+  select.addEventListener('change', () => onPick(select.value));
+
+  wrap.append(caption, select);
+  return wrap;
+}
+
+export function renderPanel(root: HTMLElement, panel: Panel) {
   root.replaceChildren();
 
   const title = document.createElement('h1');
   title.textContent = 'OpenTopology';
+  root.append(title);
 
-  const picker = document.createElement('select');
-  for (const name of effects) {
-    const option = document.createElement('option');
-    option.value = name;
-    option.textContent = name;
-    option.selected = name === active;
-    picker.append(option);
+  root.append(picker('source', panel.sources, panel.source, panel.onSource));
+  root.append(picker('effect', panel.effects, panel.effect, panel.onEffect));
+
+  if (panel.notice) {
+    const notice = document.createElement('p');
+    notice.className = 'notice';
+    notice.textContent = panel.notice;
+    root.append(notice);
   }
-  picker.addEventListener('change', () => onSelect(picker.value));
-  root.append(title, picker);
 
-  for (const group of groups) {
+  for (const group of panel.groups) {
     if (group.params.length === 0) continue;
     const heading = document.createElement('h2');
     heading.textContent = group.title;
-    root.append(heading, ...group.params.map((p) => slider(p, group.onChange)));
+    root.append(heading, ...group.params.map((param) => slider(param, group.onChange)));
   }
 }

@@ -45,7 +45,15 @@ Everything here is a fixed-size grid, so everything runs on the GPU. Connected c
 
 ## Sensor
 
-Built against a Kinect for Xbox 360 (model 1414) via `libfreenect`. The bridge is a separate optional process; nothing in the app requires it. Recordings are the recommended way to develop away from the sandbox.
+Built against a Kinect for Xbox 360 (model 1414) via `libfreenect`. Nothing in the app requires one — the noise source is the default and needs no hardware.
+
+```sh
+npm run kinect:setup
+```
+
+That installs `libfreenect` if it is missing and builds `bridge/depth`, a small reader that streams 640x480 uint16 millimetre frames. Plug the Kinect in (it needs its 12V adapter, the bare USB cable will not do), pick **kinect** as the source, and set `basePlane` to the distance from the camera to empty sand and `range` to how far above that you want to fill the height scale.
+
+The dev server pipes frames straight to the page, so there is no second process to start and nothing to configure. Only one reader can hold the device at a time.
 
 ## Status
 

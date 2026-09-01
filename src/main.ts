@@ -2,7 +2,9 @@ import { createCamera } from './camera';
 import { createDepth, initGpu } from './gpu';
 import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
+import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
+import * as kinect from './sources/kinect.slang';
 import * as clusters from './effects/clusters.slang';
 import * as contours from './effects/contours.slang';
 import * as normals from './effects/normals.slang';
@@ -11,7 +13,9 @@ const SIZE = 256;
 const GROUPS = Math.ceil(SIZE / 8);
 const VERTICES = (SIZE - 1) * (SIZE - 1) * 6;
 const ENGINE_BYTES = 32;
+const DEPTH_BYTES = 640 * 480 * 2;
 
+const SOURCES: Record<string, SlangModule> = { noise, kinect };
 const EFFECTS: Record<string, SlangModule> = { contours, normals, clusters };
 
 async function main() {
@@ -28,30 +32,74 @@ async function main() {
     size: SIZE * SIZE * 4,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
+  const depth = device.createBuffer({
+    size: DEPTH_BYTES,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
 
-  const shared = { engine, heights };
-  const source = new Program(device, noise, shared, SIZE * SIZE, format);
-  const effects = Object.fromEntries(
-    Object.entries(EFFECTS).map(([name, mod]) => [name, new Program(device, mod, shared, SIZE * SIZE, format)]),
-  );
+  const shared = { engine, heights, depth };
+  const build = (modules: Record<string, SlangModule>) =>
+    Object.fromEntries(
+      Object.entries(modules).map(([name, module]) => [name, new Program(device, module, shared, SIZE * SIZE, format)]),
+    );
 
-  let active = 'contours';
+  const sources = build(SOURCES);
+  const effects = build(EFFECTS);
+
+  let activeSource = 'noise';
+  let activeEffect = 'contours';
+  let notice = '';
+  let stream: DepthStream | null = null;
   const view = { heightScale: 0.9 };
 
   const draw = () => {
-    renderPanel(panel, Object.keys(effects), active, (name) => {
-      active = name;
-      draw();
-    }, [
-      { title: 'terrain', params: source.params, onChange: (n, v) => source.setParam(n, v) },
-      { title: active, params: effects[active].params, onChange: (n, v) => effects[active].setParam(n, v) },
-      {
-        title: 'view',
-        params: [{ name: 'heightScale', offset: 0, value: view.heightScale, lo: 0, hi: 3 }],
-        onChange: (_, v) => { view.heightScale = v; },
+    renderPanel(panel, {
+      sources: Object.keys(sources),
+      source: activeSource,
+      onSource: (name) => selectSource(name),
+      effects: Object.keys(effects),
+      effect: activeEffect,
+      onEffect: (name) => {
+        activeEffect = name;
+        draw();
       },
-    ]);
+      notice,
+      groups: [
+        { title: activeSource, params: sources[activeSource].params, onChange: (n, v) => sources[activeSource].setParam(n, v) },
+        { title: activeEffect, params: effects[activeEffect].params, onChange: (n, v) => effects[activeEffect].setParam(n, v) },
+        {
+          title: 'view',
+          params: [{ name: 'heightScale', offset: 0, value: view.heightScale, lo: 0, hi: 3 }],
+          onChange: (_, value) => { view.heightScale = value; },
+        },
+      ],
+    });
   };
+
+  const selectSource = async (name: string) => {
+    stream?.stop();
+    stream = null;
+    activeSource = name;
+    notice = '';
+    draw();
+
+    if (name !== 'kinect') return;
+
+    if (!(await bridgeReady())) {
+      notice = 'kinect bridge not built — run: npm run kinect:setup';
+      draw();
+      return;
+    }
+
+    stream = streamDepth(
+      (frame) => device.queue.writeBuffer(depth, 0, frame),
+      (reason) => {
+        notice = reason;
+        draw();
+      },
+    );
+  };
+
   draw();
 
   const engineData = new ArrayBuffer(ENGINE_BYTES);
@@ -60,20 +108,20 @@ async function main() {
   sizes[0] = SIZE;
   sizes[1] = SIZE;
 
-  let depth = createDepth(device, 1, 1);
-  let depthWidth = 0;
-  let depthHeight = 0;
+  let depthTexture = createDepth(device, 1, 1);
+  let width = 0;
+  let height = 0;
 
   const resize = () => {
-    const width = Math.max(1, Math.floor(canvas.clientWidth * devicePixelRatio));
-    const height = Math.max(1, Math.floor(canvas.clientHeight * devicePixelRatio));
-    if (width === depthWidth && height === depthHeight) return;
-    canvas.width = width;
-    canvas.height = height;
-    depth.destroy();
-    depth = createDepth(device, width, height);
-    depthWidth = width;
-    depthHeight = height;
+    const w = Math.max(1, Math.floor(canvas.clientWidth * devicePixelRatio));
+    const h = Math.max(1, Math.floor(canvas.clientHeight * devicePixelRatio));
+    if (w === width && h === height) return;
+    canvas.width = w;
+    canvas.height = h;
+    depthTexture.destroy();
+    depthTexture = createDepth(device, w, h);
+    width = w;
+    height = h;
   };
 
   const start = performance.now();
@@ -86,12 +134,12 @@ async function main() {
     values[4] = camera.yaw;
     values[5] = camera.pitch;
     values[6] = camera.zoom;
-    values[7] = depthWidth / depthHeight;
+    values[7] = width / height;
     device.queue.writeBuffer(engine, 0, engineData);
 
-    const effect = effects[active];
+    const effect = effects[activeEffect];
     const encoder = device.createCommandEncoder();
-    source.compute(encoder, GROUPS);
+    sources[activeSource].compute(encoder, GROUPS);
     effect.compute(encoder, GROUPS);
 
     const pass = encoder.beginRenderPass({
@@ -104,7 +152,7 @@ async function main() {
         },
       ],
       depthStencilAttachment: {
-        view: depth.createView(),
+        view: depthTexture.createView(),
         depthClearValue: 1,
         depthLoadOp: 'clear',
         depthStoreOp: 'store',

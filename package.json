@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "kinect:setup": "bash bridge/setup.sh"
   },
   "devDependencies": {
+    "@types/node": "^26.4.0",
     "@webgpu/types": "^0.1.72",
     "typescript": "^5.9.3",
     "vite": "^7.1.0",

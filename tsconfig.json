@@ -6,7 +6,7 @@
     "strict": true,
     "noUnusedLocals": true,
     "skipLibCheck": true,
-    "types": ["vite/client", "@webgpu/types"]
+    "types": ["vite/client", "@webgpu/types", "node"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "bridge", "vite.config.ts"]
 }
