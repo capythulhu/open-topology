@@ -5,11 +5,14 @@
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #define FRAME_BYTES (640 * 480 * 2)
 
 static volatile sig_atomic_t running = 1;
+static volatile sig_atomic_t frames = 0;
 
 static void stop(int signal) {
     (void)signal;
@@ -21,6 +24,7 @@ static void on_depth(freenect_device *device, void *depth, uint32_t timestamp) {
     (void)timestamp;
     if (fwrite(depth, 1, FRAME_BYTES, stdout) != FRAME_BYTES) running = 0;
     fflush(stdout);
+    frames++;
 }
 
 int main(void) {
@@ -58,7 +62,15 @@ int main(void) {
     freenect_set_depth_callback(device, on_depth);
     freenect_start_depth(device);
 
-    while (running && freenect_process_events(context) >= 0) {
+    // Killing a reader with SIGKILL leaves the device streaming into nothing, and
+    // it then opens cleanly but never delivers a frame. Say so rather than hang.
+    time_t opened = time(NULL);
+    struct timeval wait = {1, 0};
+    while (running && freenect_process_events_timeout(context, &wait) >= 0) {
+        if (frames == 0 && time(NULL) - opened > 6) {
+            fprintf(stderr, "kinect opened but sent no frames — unplug it and plug it back in\n");
+            running = 0;
+        }
     }
 
     freenect_stop_depth(device);

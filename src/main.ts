@@ -50,6 +50,7 @@ async function main() {
   let activeEffect = 'contours';
   let notice = '';
   let stream: DepthStream | null = null;
+  let latest: Uint8Array<ArrayBuffer> | null = null;
   const view = { heightScale: 0.9 };
 
   const draw = () => {
@@ -64,6 +65,10 @@ async function main() {
         draw();
       },
       notice,
+      actions:
+        activeSource === 'kinect'
+          ? [{ label: 'set base plane from view', onClick: calibrate }]
+          : [],
       groups: [
         { title: activeSource, params: sources[activeSource].params, onChange: (n, v) => sources[activeSource].setParam(n, v) },
         { title: activeEffect, params: effects[activeEffect].params, onChange: (n, v) => effects[activeEffect].setParam(n, v) },
@@ -74,6 +79,28 @@ async function main() {
         },
       ],
     });
+  };
+
+  // Nobody should have to guess a distance in millimetres. The base plane is
+  // whatever the sensor mostly sees — the empty sand — and the range is how far
+  // the nearest few percent rise above it.
+  const calibrate = () => {
+    if (!latest) return;
+
+    const samples = new Uint16Array(latest.buffer);
+    const valid: number[] = [];
+    for (let i = 0; i < samples.length; i += 7) {
+      if (samples[i] > 0) valid.push(samples[i]);
+    }
+    if (valid.length < 100) return;
+
+    valid.sort((a, b) => a - b);
+    const base = valid[valid.length >> 1];
+    const nearest = valid[Math.floor(valid.length * 0.02)];
+
+    sources.kinect.setParam('basePlane', base);
+    sources.kinect.setParam('range', Math.max(40, base - nearest));
+    draw();
   };
 
   const selectSource = async (name: string) => {
@@ -92,7 +119,10 @@ async function main() {
     }
 
     stream = streamDepth(
-      (frame) => device.queue.writeBuffer(depth, 0, frame),
+      (frame) => {
+        latest = frame;
+        device.queue.writeBuffer(depth, 0, frame);
+      },
       (reason) => {
         notice = reason;
         draw();

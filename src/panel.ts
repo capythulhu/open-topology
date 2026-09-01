@@ -14,6 +14,7 @@ export type Panel = {
   effect: string;
   onEffect: (name: string) => void;
   groups: Group[];
+  actions: { label: string; onClick: () => void }[];
   notice: string;
 };
 
@@ -83,6 +84,13 @@ export function renderPanel(root: HTMLElement, panel: Panel) {
     notice.className = 'notice';
     notice.textContent = panel.notice;
     root.append(notice);
+  }
+
+  for (const action of panel.actions) {
+    const button = document.createElement('button');
+    button.textContent = action.label;
+    button.addEventListener('click', action.onClick);
+    root.append(button);
   }
 
   for (const group of panel.groups) {

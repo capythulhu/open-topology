@@ -24,6 +24,8 @@ uint depthAt(int2 p) {
 
 // The IR emitter sits beside the camera, so steep slopes and box walls leave
 // holes that read as zero. Widen the search until something valid turns up.
+// Returns 0 when there is nothing to be had — shiny metal reflects the pattern
+// away entirely and never resolves at any radius.
 float millimetresAt(int2 p) {
     uint here = depthAt(p);
     if (here != 0u) return float(here);
@@ -39,7 +41,7 @@ float millimetresAt(int2 p) {
         }
         if (found > 0.0) return sum / found;
     }
-    return basePlane;
+    return 0.0;
 }
 
 [shader("compute")]
@@ -52,6 +54,8 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 source = center + (uv - 0.5) * cropSize * float(DEPTH_HEIGHT);
 
     float millimetres = millimetresAt(int2(source));
+    if (millimetres == 0.0) return;
+
     float target = (saturate((basePlane - millimetres) / range) - 0.5) * amplitude;
 
     uint i = cellIndex(tid.xy);
