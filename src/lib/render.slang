@@ -26,12 +26,16 @@ float3 orbit(float3 p) {
 
 [shader("vertex")]
 Varying vertexMain(uint vid: SV_VertexID) {
-    uint cells = engine.size.x - 1;
+    uint columns = engine.size.x - 1;
     uint quad = vid / 6;
-    uint2 p = uint2(quad % cells, quad / cells) + QUAD[vid % 6];
+    uint2 p = uint2(quad % columns, quad / columns) + QUAD[vid % 6];
 
     float2 uv = float2(p) / float2(engine.size - 1);
-    float3 world = float3(uv.x - 0.5, heightAt(int2(p)) * engine.heightScale, uv.y - 0.5);
+    float2 extent = fieldExtent();
+    float3 world = float3(
+        (uv.x - 0.5) * extent.x,
+        heightAt(int2(p)) * engine.heightScale,
+        (uv.y - 0.5) * extent.y);
     float3 r = orbit(world);
 
     Varying o;
@@ -53,19 +57,29 @@ float heightSmooth(float2 uv) {
     return lerp(top, bottom, f.y);
 }
 
+// The field keeps the aspect ratio of its resolution, scaled to sit inside a
+// unit square, so a 4:3 grid renders as a 4:3 plane.
+float2 fieldExtent() {
+    return float2(engine.size) / float(max(engine.size.x, engine.size.y));
+}
+
 // Per pixel off the interpolated height, so shading matches the surface the
-// vertex shader actually built rather than stepping once per cell.
+// vertex shader actually built rather than stepping once per cell. Gradients are
+// per world unit, which is not the same as per cell once the field is not square.
 float3 normalAt(float2 uv) {
-    float2 e = 1.0 / float2(engine.size - 1);
-    float gx = (heightSmooth(uv + float2(e.x, 0.0)) - heightSmooth(uv - float2(e.x, 0.0))) / (2.0 * e.x);
-    float gz = (heightSmooth(uv + float2(0.0, e.y)) - heightSmooth(uv - float2(0.0, e.y))) / (2.0 * e.y);
+    float2 step = 1.0 / float2(engine.size - 1);
+    float2 spacing = fieldExtent() * step;
+    float gx = (heightSmooth(uv + float2(step.x, 0.0)) - heightSmooth(uv - float2(step.x, 0.0))) / (2.0 * spacing.x);
+    float gz = (heightSmooth(uv + float2(0.0, step.y)) - heightSmooth(uv - float2(0.0, step.y))) / (2.0 * spacing.y);
     return normalize(float3(-gx * engine.heightScale, 1.0, -gz * engine.heightScale));
 }
 
-// Dividing by fwidth keeps a contour one pixel wide whatever the slope does.
+// Dividing by fwidth keeps a contour one pixel wide whatever the slope does. A
+// perfectly flat field has no derivative at all, so guard the divide or the whole
+// surface comes out NaN.
 float contourMask(float h, float interval, float width) {
     float f = h / interval;
-    float d = abs(frac(f - 0.5) - 0.5) / fwidth(f);
+    float d = abs(frac(f - 0.5) - 0.5) / max(fwidth(f), 1e-6);
     return 1.0 - smoothstep(width - 0.5, width + 0.5, d);
 }
 

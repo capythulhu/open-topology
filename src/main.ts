@@ -10,11 +10,17 @@ import * as clusters from './effects/clusters.slang';
 import * as contours from './effects/contours.slang';
 import * as normals from './effects/normals.slang';
 
-const SIZE = 256;
-const GROUPS = Math.ceil(SIZE / 8);
-const VERTICES = (SIZE - 1) * (SIZE - 1) * 6;
 const ENGINE_BYTES = 48;
 const DEPTH_BYTES = 640 * 480 * 2;
+
+// The plane takes the aspect ratio of its resolution, so a 4:3 field matches what
+// the sensor actually sees instead of cropping it to a square.
+const FIELDS: Record<string, { columns: number; rows: number }> = {
+  '256 x 256': { columns: 256, rows: 256 },
+  '320 x 240': { columns: 320, rows: 240 },
+  '480 x 360': { columns: 480, rows: 360 },
+  '640 x 480': { columns: 640, rows: 480 },
+};
 
 const SOURCES: Record<string, SlangModule> = { noise, kinect };
 const EFFECTS: Record<string, SlangModule> = { contours, normals, clusters };
@@ -29,10 +35,7 @@ async function main() {
     size: ENGINE_BYTES,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
-  const heights = device.createBuffer({
-    size: SIZE * SIZE * 4,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  });
+
   const depth = device.createBuffer({
     size: DEPTH_BYTES,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
@@ -46,14 +49,48 @@ async function main() {
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
-  const shared = { engine, heights, depth, ground: groundBuffer, reference };
-  const build = (modules: Record<string, SlangModule>) =>
-    Object.fromEntries(
-      Object.entries(modules).map(([name, module]) => [name, new Program(device, module, shared, SIZE * SIZE, format)]),
+  let fieldName = '256 x 256';
+  let field = FIELDS[fieldName];
+  let heights = device.createBuffer({
+    size: field.columns * field.rows * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+  });
+
+  const build = (modules: Record<string, SlangModule>) => {
+    const shared = { engine, heights, depth, ground: groundBuffer, reference };
+    const cells = field.columns * field.rows;
+    return Object.fromEntries(
+      Object.entries(modules).map(([name, module]) => [name, new Program(device, module, shared, cells, format)]),
+    );
+  };
+
+  let sources = build(SOURCES);
+  let effects = build(EFFECTS);
+
+  // Changing resolution means new buffers and new bind groups, so the programs
+  // are rebuilt; carrying the slider values across keeps that invisible.
+  const setField = (name: string) => {
+    const settings = [...Object.values(sources), ...Object.values(effects)].map((program) =>
+      program.params.map((p) => [p.name, p.value] as const),
     );
 
-  const sources = build(SOURCES);
-  const effects = build(EFFECTS);
+    fieldName = name;
+    field = FIELDS[name];
+    heights.destroy();
+    heights = device.createBuffer({
+      size: field.columns * field.rows * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+
+    sources = build(SOURCES);
+    effects = build(EFFECTS);
+    [...Object.values(sources), ...Object.values(effects)].forEach((program, i) => {
+      for (const [key, value] of settings[i] ?? []) program.setParam(key, value);
+    });
+
+    ground.spread = 0;
+    draw();
+  };
 
   let activeSource = 'noise';
   let activeEffect = 'contours';
@@ -64,6 +101,9 @@ async function main() {
 
   const draw = () => {
     renderPanel(panel, {
+      fields: Object.keys(FIELDS),
+      field: fieldName,
+      onField: setField,
       sources: Object.keys(sources),
       source: activeSource,
       onSource: (name) => selectSource(name),
@@ -162,7 +202,7 @@ async function main() {
 
     // Otherwise cells the new source never writes — sensor holes, mostly — keep
     // showing the old source's terrain.
-    device.queue.writeBuffer(heights, 0, new Float32Array(SIZE * SIZE));
+    device.queue.writeBuffer(heights, 0, new Float32Array(field.columns * field.rows));
     draw();
 
     if (name !== 'kinect') return;
@@ -201,8 +241,7 @@ async function main() {
   const engineData = new ArrayBuffer(ENGINE_BYTES);
   const sizes = new Uint32Array(engineData);
   const values = new Float32Array(engineData);
-  sizes[0] = SIZE;
-  sizes[1] = SIZE;
+
 
   let depthTexture = createDepth(device, 1, 1);
   let width = 0;
@@ -225,6 +264,8 @@ async function main() {
   const frame = () => {
     resize();
 
+    sizes[0] = field.columns;
+    sizes[1] = field.rows;
     values[2] = view.heightScale;
     values[3] = (performance.now() - start) / 1000;
     values[4] = camera.yaw;
@@ -242,8 +283,10 @@ async function main() {
 
     const effect = effects[activeEffect];
     const encoder = device.createCommandEncoder();
-    sources[activeSource].compute(encoder, GROUPS);
-    effect.compute(encoder, GROUPS);
+    const columns = Math.ceil(field.columns / 8);
+    const rows = Math.ceil(field.rows / 8);
+    sources[activeSource].compute(encoder, columns, rows);
+    effect.compute(encoder, columns, rows);
 
     const pass = encoder.beginRenderPass({
       colorAttachments: [
@@ -261,7 +304,7 @@ async function main() {
         depthStoreOp: 'store',
       },
     });
-    effect.draw(pass, VERTICES);
+    effect.draw(pass, (field.columns - 1) * (field.rows - 1) * 6);
     pass.end();
 
     device.queue.submit([encoder.finish()]);

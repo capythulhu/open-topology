@@ -7,6 +7,9 @@ export type Group = {
 };
 
 export type Panel = {
+  fields: string[];
+  field: string;
+  onField: (name: string) => void;
   sources: string[];
   source: string;
   onSource: (name: string) => void;
@@ -76,6 +79,7 @@ export function renderPanel(root: HTMLElement, panel: Panel) {
   title.textContent = 'OpenTopology';
   root.append(title);
 
+  root.append(picker('field', panel.fields, panel.field, panel.onField));
   root.append(picker('source', panel.sources, panel.source, panel.onSource));
   root.append(picker('effect', panel.effects, panel.effect, panel.onEffect));
 

@@ -139,13 +139,13 @@ export class Program {
     if (this.paramsBuffer) this.device.queue.writeBuffer(this.paramsBuffer, 0, this.paramsData);
   }
 
-  compute(encoder: GPUCommandEncoder, groups: number) {
+  compute(encoder: GPUCommandEncoder, columns: number, rows: number) {
     if (this.computePasses.length === 0) return;
     const pass = encoder.beginComputePass();
     pass.setBindGroup(0, this.bindGroup);
     for (const { pipeline, iterations } of this.computePasses) {
       pass.setPipeline(pipeline);
-      for (let i = 0; i < iterations; i++) pass.dispatchWorkgroups(groups, groups);
+      for (let i = 0; i < iterations; i++) pass.dispatchWorkgroups(columns, rows);
     }
     pass.end();
   }
