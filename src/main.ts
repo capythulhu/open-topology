@@ -9,6 +9,7 @@ import * as kinect from './sources/kinect.slang';
 import * as clusters from './effects/clusters.slang';
 import * as contours from './effects/contours.slang';
 import * as normals from './effects/normals.slang';
+import * as water from './effects/water.slang';
 
 const ENGINE_BYTES = 48;
 const DEPTH_BYTES = 640 * 480 * 2;
@@ -23,7 +24,7 @@ const FIELDS: Record<string, { columns: number; rows: number }> = {
 };
 
 const SOURCES: Record<string, SlangModule> = { noise, kinect };
-const EFFECTS: Record<string, SlangModule> = { contours, normals, clusters };
+const EFFECTS: Record<string, SlangModule> = { contours, water, clusters, normals };
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
