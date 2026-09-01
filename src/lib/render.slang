@@ -17,8 +17,11 @@ static const uint2 QUAD[6] = { uint2(0, 0), uint2(1, 0), uint2(0, 1), uint2(1, 0
 float3 orbit(float3 p) {
     float cy = cos(engine.yaw), sy = sin(engine.yaw);
     float3 a = float3(p.x * cy - p.z * sy, p.y, p.x * sy + p.z * cy);
+    // Pitch turns the world the opposite way to the camera: get this sign wrong
+    // and raising the pitch swings the view under the terrain, so height counts
+    // as distance and peaks lose the depth test to valleys.
     float cp = cos(engine.pitch), sp = sin(engine.pitch);
-    return float3(a.x, a.y * cp - a.z * sp, a.y * sp + a.z * cp);
+    return float3(a.x, a.y * cp + a.z * sp, a.z * cp - a.y * sp);
 }
 
 [shader("vertex")]
