@@ -88,7 +88,13 @@ void generate(uint3 tid: SV_DispatchThreadID) {
 
     float2 uv = (float2(tid.xy) + 0.5) / float2(engine.size);
     float2 center = float2(cropX * float(DEPTH_WIDTH), cropY * float(DEPTH_HEIGHT));
-    int2 p = int2(center + (uv - 0.5) * cropSize * float(DEPTH_HEIGHT));
+
+    // The window read from the sensor has to have the field's own aspect ratio,
+    // or a 4:3 field stretches a square patch of depth and everything comes out
+    // wider than it is.
+    float window = cropSize * float(DEPTH_HEIGHT);
+    float2 span = float2(window * float(engine.size.x) / float(engine.size.y), window);
+    int2 p = int2(center + (uv - 0.5) * span);
 
     float live = filled(depth, p);
     if (live == 0.0) return;
