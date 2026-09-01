@@ -10,6 +10,7 @@ RWStructuredBuffer<float> heights;
 StructuredBuffer<uint> depth;
 ConstantBuffer<Bounds> bounds;
 
+[Param(1.0, 0.0, 3.0)]  uniform float height;
 [Param(0.6, 0.0, 0.95)] uniform float smoothing;
 [Param(0.5, 0.0, 1.0)]  uniform float cropX;
 [Param(0.5, 0.0, 1.0)]  uniform float cropY;
@@ -61,8 +62,9 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     if (live == 0.0) return;
 
     // Nearest reading in frame is the top of the palette, furthest is the bottom.
+    // Scaling about the midpoint exaggerates relief without shifting the surface.
     float span = max(bounds.far - bounds.near, 1.0);
-    float target = clamp((bounds.far - live) / span, 0.0, 1.0) - 0.5;
+    float target = (clamp((bounds.far - live) / span, 0.0, 1.0) - 0.5) * height;
 
     uint i = cellIndex(tid.xy);
     heights[i] = lerp(target, heights[i], smoothing);

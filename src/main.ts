@@ -212,10 +212,13 @@ async function main() {
     values[5] = camera.pitch;
     values[6] = camera.zoom;
     values[7] = width / height;
+    // Exaggerating the relief compresses what a unit of height is worth in mm,
+    // which keeps a contour interval honest.
+    const param = (name: string) => sources[activeSource].params.find((p) => p.name === name)?.value;
     values[8] =
       activeSource === 'kinect'
-        ? Math.max(1, scale.far - scale.near)
-        : (sources[activeSource].params.find((p) => p.name === 'relief')?.value ?? 200);
+        ? Math.max(1, (scale.far - scale.near) / Math.max(param('height') ?? 1, 0.01))
+        : (param('relief') ?? 200);
     device.queue.writeBuffer(engine, 0, engineData);
 
     const effect = effects[activeEffect];
