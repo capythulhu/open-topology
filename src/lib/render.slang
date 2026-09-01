@@ -74,13 +74,14 @@ float3 normalAt(float2 uv) {
     return normalize(float3(-gx * engine.heightScale, 1.0, -gz * engine.heightScale));
 }
 
-// Dividing by fwidth keeps a contour one pixel wide whatever the slope does. A
-// perfectly flat field has no derivative at all, so guard the divide or the whole
-// surface comes out NaN.
+// Dividing by fwidth keeps a contour one pixel wide whatever the slope does.
+// Ground flattened to a constant has no derivative to divide by, and no contour
+// crossing it either, so it draws no line rather than NaN or a solid fill.
 float contourMask(float h, float interval, float width) {
     float f = h / interval;
-    float d = abs(frac(f - 0.5) - 0.5) / max(fwidth(f), 1e-6);
-    return 1.0 - smoothstep(width - 0.5, width + 0.5, d);
+    float slope = fwidth(f);
+    if (slope < 1e-6) return 0.0;
+    return 1.0 - smoothstep(width - 0.5, width + 0.5, abs(frac(f - 0.5) - 0.5) / slope);
 }
 
 float shading(float2 uv) {

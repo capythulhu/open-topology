@@ -15,6 +15,7 @@ StructuredBuffer<uint> reference;
 ConstantBuffer<Ground> ground;
 
 [Param(1.0, 0.0, 3.0)]  uniform float height;
+[Param(8.0, 0.0, 40.0)] uniform float deadzone;
 [Param(0.8, 0.0, 0.95)] uniform float smoothing;
 [Param(0.5, 0.0, 1.0)]  uniform float cropX;
 [Param(0.5, 0.0, 1.0)]  uniform float cropY;
@@ -102,7 +103,12 @@ void generate(uint3 tid: SV_DispatchThreadID) {
         base = ground.a * float(p.x) + ground.b * float(p.y) + ground.c;
     }
 
-    float target = clamp((base - live) / max(ground.spread, 1.0), -1.0, 1.0) * 0.5 * height;
+    // Subtracting the deadzone from the magnitude rather than zeroing everything
+    // below it keeps the surface continuous: a hard cutoff leaves a visible step
+    // wherever the ground happens to cross the threshold.
+    float deviation = base - live;
+    float beyond = max(abs(deviation) - deadzone, 0.0);
+    float target = clamp(sign(deviation) * beyond / max(ground.spread, 1.0), -1.0, 1.0) * 0.5 * height;
 
     uint i = cellIndex(tid.xy);
     heights[i] = lerp(target, heights[i], smoothing);
