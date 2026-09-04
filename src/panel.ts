@@ -13,6 +13,7 @@ export type Panel = {
   sources: string[];
   source: string;
   onSource: (name: string) => void;
+  preview: HTMLElement | null;
   effects: string[];
   effect: string;
   onEffect: (name: string) => void;
@@ -81,6 +82,7 @@ export function renderPanel(root: HTMLElement, panel: Panel) {
 
   root.append(picker('field', panel.fields, panel.field, panel.onField));
   root.append(picker('source', panel.sources, panel.source, panel.onSource));
+  if (panel.preview) root.append(panel.preview);
   root.append(picker('effect', panel.effects, panel.effect, panel.onEffect));
 
   if (panel.notice) {

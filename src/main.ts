@@ -3,6 +3,7 @@ import { createDepth, initGpu } from './gpu';
 import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
 import { fitGround, spreadAgainst } from './sources/ground';
+import { createPreview } from './sources/preview';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
 import * as kinect from './sources/kinect.slang';
@@ -96,6 +97,8 @@ async function main() {
   let activeSource = 'noise';
   let activeEffect = 'contours';
   let notice = '';
+  const preview = createPreview();
+  let shown = 0;
   let stream: DepthStream | null = null;
   let latest: Uint8Array<ArrayBuffer> | null = null;
   const view = { heightScale: 0.9 };
@@ -114,6 +117,7 @@ async function main() {
         activeEffect = name;
         draw();
       },
+      preview: activeSource === 'kinect' ? preview.element : null,
       notice,
       actions:
         activeSource !== 'kinect'
@@ -225,6 +229,18 @@ async function main() {
         latest = frame;
         device.queue.writeBuffer(depth, 0, frame);
         measure(frame);
+
+        // A few times a second is plenty for a thumbnail, and it keeps the cost
+        // of redrawing it off the frame budget.
+        if (shown++ % 6 === 0) {
+          const value = (name: string) => sources.kinect.params.find((p) => p.name === name)?.value ?? 0.5;
+          preview.draw(frame, {
+            x: value('cropX'),
+            y: value('cropY'),
+            size: value('cropSize'),
+            aspect: field.columns / field.rows,
+          });
+        }
         if (first) {
           notice = '';
           draw();

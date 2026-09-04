@@ -55,6 +55,8 @@ That installs `libfreenect` if it is missing and builds `bridge/depth`, a small 
 
 Mount it at least half a metre back. A v1 returns nothing at all for anything closer, and the app will tell you when too little of the view is resolving.
 
+Picking **kinect** shows a thumbnail of the raw depth under the source, with the crop drawn on it — near reads bright, holes read black, so it is the quickest way to see whether the sensor is aimed and cropped where you think it is.
+
 It works with nothing configured, by fitting a plane to whatever it sees. Pressing **calibrate on the flat surface** with the box empty does better still: the captured frame becomes a per-pixel reference, which cancels the sensor's own lens and pattern error along with the tilt.
 
 The dev server pipes frames straight to the page, so there is no second process to start and nothing to configure.

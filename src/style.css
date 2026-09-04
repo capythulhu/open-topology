@@ -63,6 +63,16 @@ button {
 }
 button:hover { background: #2a2e37; }
 
+.preview {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  border: 1px solid #2f333c;
+  background: #000;
+  image-rendering: pixelated;
+}
+
 .row { display: block; margin-bottom: 10px; }
 .head { display: flex; justify-content: space-between; }
 .head output { color: #8a8f9a; font-variant-numeric: tabular-nums; }
