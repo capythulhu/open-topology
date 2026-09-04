@@ -52,6 +52,11 @@ Line vertexMain(uint vid: SV_VertexID) {
     }
 
     o.clip = project(world);
+
+    // A flat floor sits at exactly the grid's height, and an exact depth tie is
+    // decided pixel by pixel, which shreds the lines. Pulling the grid a hair
+    // toward the camera makes it win on the floor and lose under anything raised.
+    o.clip.z -= 0.0008;
     return o;
 }
 
