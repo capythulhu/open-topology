@@ -26,7 +26,7 @@ float4 fragmentMain(Varying v) : SV_Target {
 
 Drop that in `src/effects/` and it shows up in the UI with a slider for every param — no registration, no wiring.
 
-One effect is one file, and that includes the parts that are not shaders. A clustering pass and the shader that paints each cluster live together, because they are the same idea.
+One effect is one file, and that includes the parts that are not shaders. The passes that find each object and measure it live in the same file as the shader that paints it, because they are the same idea.
 
 ## Running it
 
@@ -65,6 +65,6 @@ Only one reader can hold the device at a time, so a second dev server or a stray
 
 ## Status
 
-Early, but it runs. Animated noise terrain in 3D with seven effects, including a shallow-water simulation, a point cloud that draws its own geometry, and one that measures each object in mm, cm², and mL and letters the numbers over it. Sensor input, projector output, and calibration are not built yet.
+Early, but it runs. Animated noise terrain in 3D with six effects, including a shallow-water simulation, a point cloud that draws its own geometry, and one that measures each object in mm, cm², and mL and letters the numbers over it. Sensor input, projector output, and calibration are not built yet.
 
 MIT.
