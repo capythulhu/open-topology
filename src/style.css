@@ -16,10 +16,15 @@ body {
   top: 16px;
   left: 16px;
   width: 240px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 16px;
   border-radius: 10px;
   background: #16181dee;
   border: 1px solid #2a2d35;
+  scrollbar-width: thin;
+  scrollbar-color: #2f333c transparent;
 }
 
 h1 { margin: 0 0 12px; font-size: 14px; letter-spacing: 0.02em; }
