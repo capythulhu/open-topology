@@ -113,9 +113,14 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     // Subtracting the deadzone from the magnitude rather than zeroing everything
     // below it keeps the surface continuous: a hard cutoff leaves a visible step
     // wherever the ground happens to cross the threshold.
+    // spread sets where the palette tops out, not where the geometry does. It is a
+    // high percentile of the deviations, so an object that is a small part of the
+    // view — a hand — would otherwise have its top sheared flat at that line.
+    // Raised things get headroom past it; sunk things stay bound, since what lies
+    // far below the plane is nearly always background, not a hole in the sand.
     float deviation = base - live;
     float beyond = max(abs(deviation) - deadzone, 0.0);
-    float target = clamp(sign(deviation) * beyond / max(ground.spread, 1.0), -1.0, 1.0) * 0.5 * height;
+    float target = clamp(sign(deviation) * beyond / max(ground.spread, 1.0), -1.0, 2.5) * 0.5 * height;
 
     uint i = cellIndex(tid.xy);
     rawHeights[i] = target;
