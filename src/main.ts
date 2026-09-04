@@ -108,7 +108,7 @@ async function main() {
   let shown = 0;
   let stream: DepthStream | null = null;
   let latest: Uint8Array<ArrayBuffer> | null = null;
-  const view = { heightScale: 0.9 };
+  const view = { heightScale: 0.9, spin: 0 };
 
   const draw = () => {
     renderPanel(panel, {
@@ -140,8 +140,14 @@ async function main() {
         { title: activeEffect, params: effects[activeEffect].params, onChange: (n, v) => effects[activeEffect].setParam(n, v) },
         {
           title: 'view',
-          params: [{ name: 'heightScale', offset: 0, value: view.heightScale, lo: 0, hi: 3 }],
-          onChange: (_, value) => { view.heightScale = value; },
+          params: [
+            { name: 'heightScale', offset: 0, value: view.heightScale, lo: 0, hi: 3 },
+            { name: 'spin', offset: 0, value: view.spin, lo: -1, hi: 1 },
+          ],
+          onChange: (name, value) => {
+            if (name === 'heightScale') view.heightScale = value;
+            if (name === 'spin') view.spin = value;
+          },
         },
         { title: 'grid', params: grid.params, onChange: (n, v) => grid.setParam(n, v) },
       ],
@@ -287,9 +293,16 @@ async function main() {
   };
 
   const start = performance.now();
+  let previous = start;
 
   const frame = () => {
     resize();
+
+    // Turntable: yaw advances by spin radians per second, on top of whatever
+    // dragging has done, so the two compose rather than fight.
+    const now = performance.now();
+    camera.yaw += view.spin * (now - previous) / 1000;
+    previous = now;
 
     sizes[0] = field.columns;
     sizes[1] = field.rows;
