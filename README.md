@@ -65,6 +65,6 @@ Only one reader can hold the device at a time, so a second dev server or a stray
 
 ## Status
 
-Early, but it runs. Animated noise terrain in 3D with six effects, including a shallow-water simulation and one that measures each object in mm, cm², and mL and letters the numbers over it. Sensor input, projector output, and calibration are not built yet.
+Early, but it runs. Animated noise terrain in 3D with seven effects, including a shallow-water simulation, one that measures each object in mm, cm², and mL, and one that fits a sphere to each object and reports its radius and how well it fits. Sensor input, projector output, and calibration are not built yet.
 
 MIT.

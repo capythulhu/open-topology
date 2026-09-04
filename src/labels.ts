@@ -11,8 +11,8 @@ export type Placed = {
 // Mirrors lib/labels.slang: 32 bytes, float2 cell, float height, float value,
 // then unit, line, shown, reserved as uints.
 const STRIDE = 32;
-const UNITS = ['', 'mm', 'cm²', 'mL', 'mm/s', '°', ''];
-const DECIMALS = [2, 0, 0, 0, 0, 0, 0];
+const UNITS = ['', 'mm', 'cm²', 'mL', 'mm/s', '°', '', '%'];
+const DECIMALS = [2, 0, 0, 0, 0, 0, 0, 0];
 
 export const LABELS_BYTES = MAX_LABELS * STRIDE;
 
