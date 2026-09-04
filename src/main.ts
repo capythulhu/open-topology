@@ -3,6 +3,7 @@ import { createDepth, initGpu } from './gpu';
 import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
 import { fitGround, spreadAgainst } from './sources/ground';
+import { drawLabels, parseLabels, LABELS_BYTES } from './labels';
 import { createPreview } from './sources/preview';
 import * as gridModule from './grid.slang';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
@@ -13,6 +14,7 @@ import * as contours from './effects/contours.slang';
 import * as normals from './effects/normals.slang';
 import * as sparks from './effects/sparks.slang';
 import * as raw from './effects/raw.slang';
+import * as measure from './effects/measure.slang';
 import * as water from './effects/water.slang';
 
 const ENGINE_BYTES = 48;
@@ -28,13 +30,19 @@ const FIELDS: Record<string, { columns: number; rows: number }> = {
 };
 
 const SOURCES: Record<string, SlangModule> = { noise, kinect };
-const EFFECTS: Record<string, SlangModule> = { contours, water, clusters, sparks, normals, raw };
+const EFFECTS: Record<string, SlangModule> = { contours, measure, water, clusters, sparks, normals, raw };
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
+  const overlay = document.querySelector<HTMLCanvasElement>('#labels')!;
+  const lettering = overlay.getContext('2d')!;
   const panel = document.querySelector<HTMLElement>('#panel')!;
   const { device, context, format } = await initGpu(canvas);
   const camera = createCamera(canvas);
+  // A rejected command buffer is otherwise just a black frame with no clue why.
+  device.addEventListener('uncapturederror', (event) => {
+    console.error('[gpu]', (event as GPUUncapturedErrorEvent).error.message);
+  });
 
   const engine = device.createBuffer({
     size: ENGINE_BYTES,
@@ -45,6 +53,14 @@ async function main() {
     size: DEPTH_BYTES,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
+  // Labels come back from the GPU through here, one frame behind, which nobody
+  // can see.
+  const staging = device.createBuffer({
+    size: LABELS_BYTES,
+    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+  });
+  let reading = false;
+
   const groundBuffer = device.createBuffer({
     size: 32,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -159,6 +175,7 @@ async function main() {
   const groundData = new Float32Array(8);
   const ground = { a: 0, b: 0, c: 0, spread: 0 };
   let captured: Uint16Array | null = null;
+  let sceneDepth = 1000;
 
   const measure = (frame: Uint8Array<ArrayBuffer>) => {
     const samples = new Uint16Array(frame.buffer);
@@ -181,6 +198,8 @@ async function main() {
       draw();
     }
     if (!fitted || fitted.spread === 0) return;
+
+    if (!captured) sceneDepth = fitted.a * 320 + fitted.b * 240 + fitted.c;
 
     const ease = ground.spread === 0 ? 1 : 0.1;
     ground.a += (fitted.a - ground.a) * ease;
@@ -286,6 +305,8 @@ async function main() {
     if (w === width && h === height) return;
     canvas.width = w;
     canvas.height = h;
+    overlay.width = w;
+    overlay.height = h;
     depthTexture.destroy();
     depthTexture = createDepth(device, w, h);
     width = w;
@@ -319,6 +340,14 @@ async function main() {
       activeSource === 'kinect'
         ? Math.max(1, (2 * ground.spread) / Math.max(param('height') ?? 1, 0.01))
         : (param('relief') ?? 200);
+
+    // Width of one cell in the world. A kinect v1 pixel covers about 1.7mm per
+    // metre of distance (57° across 640 pixels); the noise field has no physical
+    // size, so it is nominally 400mm wide.
+    values[9] =
+      activeSource === 'kinect'
+        ? ((param('cropSize') ?? 0.9) * 480 / field.rows) * sceneDepth * 0.001697
+        : 400 / field.columns;
     device.queue.writeBuffer(engine, 0, engineData);
 
     const effect = effects[activeEffect];
@@ -348,8 +377,47 @@ async function main() {
     effect.draw(pass, field.columns, field.rows);
     pass.end();
 
+    const wantsLabels = effect.labels !== null && !reading;
+    if (wantsLabels) encoder.copyBufferToBuffer(effect.labels!, 0, staging, 0, LABELS_BYTES);
+
     device.queue.submit([encoder.finish()]);
+
+    if (wantsLabels) {
+      reading = true;
+      void staging.mapAsync(GPUMapMode.READ).then(() => {
+        const labels = parseLabels(staging.getMappedRange().slice(0));
+        staging.unmap();
+        reading = false;
+        drawLabels(lettering, labels, projectCell);
+      });
+    } else if (effect.labels === null) {
+      lettering.clearRect(0, 0, overlay.width, overlay.height);
+    }
+
     requestAnimationFrame(frame);
+  };
+
+  // The same placement and camera as surface.slang, so a label lands on the
+  // cell it describes.
+  const projectCell = (cell: [number, number], h: number) => {
+    const longest = Math.max(field.columns, field.rows);
+    const wx = (cell[0] / (field.columns - 1) - 0.5) * (field.columns / longest);
+    const wy = h * view.heightScale;
+    const wz = (cell[1] / (field.rows - 1) - 0.5) * (field.rows / longest);
+
+    const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw);
+    const ax = wx * cy - wz * sy;
+    const az = wx * sy + wz * cy;
+    const cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
+    const rx = ax;
+    const ry = wy * cp + az * sp;
+
+    const clipX = (rx * camera.zoom) / (width / height);
+    const clipY = ry * camera.zoom;
+    return {
+      x: ((clipX + 1) / 2) * overlay.clientWidth,
+      y: ((1 - clipY) / 2) * overlay.clientHeight,
+    };
   };
 
   requestAnimationFrame(frame);

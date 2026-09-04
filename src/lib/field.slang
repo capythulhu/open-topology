@@ -20,14 +20,20 @@ struct PerCellAttribute { int n; }
 [__AttributeUsage(_AttributeTargets.Function)]
 struct VerticesAttribute { int n; }
 
+// On a buffer of Label (see labels.slang): the runtime reads it back each frame
+// and letters each shown entry onto the view at its position.
+[__AttributeUsage(_AttributeTargets.Var)]
+struct LabelsAttribute {}
+
 // On a read-only buffer: a copy of the named read-write buffer, taken after the
 // compute passes. A vertex shader may not read read-write storage at all, so
 // this is how geometry gets built from something a compute pass produced.
 [__AttributeUsage(_AttributeTargets.Var)]
 struct SnapshotAttribute { string source; }
 
-// heightMm is what the -0.5..0.5 height range means in the real world, so
-// physical settings like a contour interval can be written in millimetres.
+// heightMm is what a unit of height means in the real world and cellMm is the
+// width of one field cell, so physical quantities — a contour interval, an area,
+// a volume — can be stated in millimetres, cm², and mL.
 struct Engine {
     uint2 size;
     float heightScale;
@@ -37,6 +43,7 @@ struct Engine {
     float zoom;
     float aspect;
     float heightMm;
+    float cellMm;
 }
 
 ConstantBuffer<Engine> engine;

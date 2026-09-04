@@ -6,9 +6,17 @@ export type EntryPoint = {
   userAttribs?: Attrib[];
 };
 
+type ElementType = {
+  kind?: string;
+  elementCount?: number;
+  sizes?: { value: number }[];
+  fields?: { binding: { offset: number; size: number } }[];
+};
+
 export type ReflectionParam = {
   name: string;
   binding: { kind: string; index?: number; offset?: number };
+  type?: { resultType?: ElementType };
   userAttribs?: Attrib[];
 };
 
@@ -19,6 +27,7 @@ export type SlangModule = { code: string; reflection: Reflection };
 export type Param = { name: string; offset: number; value: number; lo: number; hi: number };
 
 const PARAMS = 'globalParams';
+export const MAX_LABELS = 64;
 const ALL_STAGES = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE;
 const BINDING = /@binding\((\d+)\)\s+@group\(0\)\s+var<\s*(uniform|storage)\s*(?:,\s*(read|read_write)\s*)?>\s*(\w+)/g;
 
@@ -47,6 +56,25 @@ function iterationsOf(entry: EntryPoint): number {
   return Number(entry.userAttribs?.find((a) => a.name === 'Iterations')?.arguments[0] ?? 1);
 }
 
+// The wasm build's reflection reports struct fields but not the struct's own
+// size, and nothing at all for scalars, so this pieces the stride together.
+// Over-allocating is harmless; under-allocating rejects every command buffer.
+function elementBytes(reflection: Reflection, name: string): number {
+  const element = reflection.parameters.find((p) => p.name === name)?.type?.resultType;
+  if (!element) return 16;
+  if (element.sizes?.[0]) return element.sizes[0].value;
+  if (element.fields?.length) {
+    const end = Math.max(...element.fields.map((f) => f.binding.offset + f.binding.size));
+    return Math.ceil(end / 16) * 16;
+  }
+  if (element.kind === 'vector') return element.elementCount === 2 ? 8 : 16;
+  return 4;
+}
+
+function hasAttribute(reflection: Reflection, name: string, attribute: string): boolean {
+  return reflection.parameters.find((p) => p.name === name)?.userAttribs?.some((a) => a.name === attribute) ?? false;
+}
+
 function snapshotsOf(reflection: Reflection): { from: string; to: string }[] {
   const pairs: { from: string; to: string }[] = [];
   for (const p of reflection.parameters) {
@@ -58,6 +86,7 @@ function snapshotsOf(reflection: Reflection): { from: string; to: string }[] {
 
 export class Program {
   readonly params: Param[];
+  readonly labels: GPUBuffer | null = null;
 
   private readonly device: GPUDevice;
   private readonly bindGroup: GPUBindGroup;
@@ -87,12 +116,17 @@ export class Program {
 
     for (const slot of slots) {
       if (buffers[slot.name]) continue;
-      const size = slot.name === PARAMS ? this.paramsData.byteLength : cells * 16;
+      const labels = hasAttribute(slang.reflection, slot.name, 'Labels');
+      const size =
+        slot.name === PARAMS
+          ? this.paramsData.byteLength
+          : (labels ? MAX_LABELS : cells) * elementBytes(slang.reflection, slot.name);
       const usage =
         slot.type === 'uniform'
           ? GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
           : GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
       buffers[slot.name] = device.createBuffer({ size, usage });
+      if (labels) this.labels = buffers[slot.name];
     }
     this.paramsBuffer = buffers[PARAMS] ?? null;
 

@@ -11,6 +11,8 @@ body {
 #view { display: block; width: 100vw; height: 100vh; cursor: grab; }
 #view:active { cursor: grabbing; }
 
+#labels { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; }
+
 #panel {
   position: fixed;
   top: 16px;
