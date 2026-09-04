@@ -16,6 +16,10 @@ struct PointsAttribute {}
 [__AttributeUsage(_AttributeTargets.Function)]
 struct PerCellAttribute { int n; }
 
+// A fixed vertex count, for geometry that does not scale with the field at all.
+[__AttributeUsage(_AttributeTargets.Function)]
+struct VerticesAttribute { int n; }
+
 // heightMm is what the -0.5..0.5 height range means in the real world, so
 // physical settings like a contour interval can be written in millimetres.
 struct Engine {

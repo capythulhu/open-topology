@@ -4,6 +4,7 @@ import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
 import { fitGround, spreadAgainst } from './sources/ground';
 import { createPreview } from './sources/preview';
+import * as gridModule from './grid.slang';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
 import * as kinect from './sources/kinect.slang';
@@ -72,11 +73,12 @@ async function main() {
 
   let sources = build(SOURCES);
   let effects = build(EFFECTS);
+  let grid = build({ grid: gridModule }).grid;
 
   // Changing resolution means new buffers and new bind groups, so the programs
   // are rebuilt; carrying the slider values across keeps that invisible.
   const setField = (name: string) => {
-    const settings = [...Object.values(sources), ...Object.values(effects)].map((program) =>
+    const settings = [...Object.values(sources), ...Object.values(effects), grid].map((program) =>
       program.params.map((p) => [p.name, p.value] as const),
     );
 
@@ -89,7 +91,8 @@ async function main() {
 
     sources = build(SOURCES);
     effects = build(EFFECTS);
-    [...Object.values(sources), ...Object.values(effects)].forEach((program, i) => {
+    grid = build({ grid: gridModule }).grid;
+    [...Object.values(sources), ...Object.values(effects), grid].forEach((program, i) => {
       for (const [key, value] of settings[i] ?? []) program.setParam(key, value);
     });
 
@@ -139,6 +142,7 @@ async function main() {
           params: [{ name: 'heightScale', offset: 0, value: view.heightScale, lo: 0, hi: 3 }],
           onChange: (_, value) => { view.heightScale = value; },
         },
+        { title: 'grid', params: grid.params, onChange: (n, v) => grid.setParam(n, v) },
       ],
     });
   };
@@ -326,6 +330,7 @@ async function main() {
         depthStoreOp: 'store',
       },
     });
+    grid.draw(pass, field.columns, field.rows);
     effect.draw(pass, field.columns, field.rows);
     pass.end();
 
