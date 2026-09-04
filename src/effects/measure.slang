@@ -132,14 +132,15 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
 float4 fragmentMain(Varying v) : SV_Target {
     int2 p = cellOf(v.uv);
     float shade = shading(v.uv);
-    float3 land = terrain(heightSmooth(v.uv));
 
+    // Whatever is not an object is background, and stays out of the way.
     uint root = ownerAt(p);
-    if (root == NONE) return float4(land * shade, 1.0);
+    if (root == NONE) return float4(float3(0.11, 0.12, 0.15) * (0.6 + 0.4 * shade), 1.0);
 
     // Each object tinted by where it sits, so neighbours read as different things.
     uint count = max(regions[root].count.load(), 1u);
     float2 centre = float2(regions[root].sumX.load(), regions[root].sumY.load()) / float(count);
     float3 tint = placeColor(centre / float2(engine.size), 0.55);
-    return float4(lerp(land, tint, 0.6) * shade, 1.0);
+    float lift = saturate(heightSmooth(v.uv) / 0.5);
+    return float4(lerp(tint * 0.7, tint + 0.25, lift) * shade, 1.0);
 }
