@@ -1,4 +1,4 @@
-export type Attrib = { name: string; arguments: number[] };
+export type Attrib = { name: string; arguments: (number | string)[] };
 
 export type EntryPoint = {
   name: string;
@@ -37,14 +37,23 @@ function paramsOf(reflection: Reflection): Param[] {
   for (const p of reflection.parameters) {
     const attr = p.userAttribs?.find((a) => a.name === 'Param');
     if (!attr || p.binding.kind !== 'uniform') continue;
-    const [value, lo, hi] = attr.arguments;
+    const [value, lo, hi] = attr.arguments.map(Number);
     params.push({ name: p.name, offset: p.binding.offset ?? 0, value, lo, hi });
   }
   return params;
 }
 
 function iterationsOf(entry: EntryPoint): number {
-  return entry.userAttribs?.find((a) => a.name === 'Iterations')?.arguments[0] ?? 1;
+  return Number(entry.userAttribs?.find((a) => a.name === 'Iterations')?.arguments[0] ?? 1);
+}
+
+function snapshotsOf(reflection: Reflection): { from: string; to: string }[] {
+  const pairs: { from: string; to: string }[] = [];
+  for (const p of reflection.parameters) {
+    const attr = p.userAttribs?.find((a) => a.name === 'Snapshot');
+    if (attr) pairs.push({ from: String(attr.arguments[0]), to: p.name });
+  }
+  return pairs;
 }
 
 export class Program {
@@ -57,6 +66,7 @@ export class Program {
   private readonly perCell: number | null = null;
   private readonly fixedVertices: number | null = null;
   private readonly paramsBuffer: GPUBuffer | null = null;
+  private readonly snapshots: { from: GPUBuffer; to: GPUBuffer }[] = [];
   private readonly paramsData: Float32Array<ArrayBuffer>;
 
   constructor(
@@ -81,10 +91,14 @@ export class Program {
       const usage =
         slot.type === 'uniform'
           ? GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
-          : GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST;
+          : GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC;
       buffers[slot.name] = device.createBuffer({ size, usage });
     }
     this.paramsBuffer = buffers[PARAMS] ?? null;
+
+    for (const { from, to } of snapshotsOf(slang.reflection)) {
+      if (buffers[from] && buffers[to]) this.snapshots.push({ from: buffers[from], to: buffers[to] });
+    }
 
     // read_write storage is illegal in the vertex stage, so those bindings skip it.
     const layout = device.createBindGroupLayout({
@@ -118,8 +132,12 @@ export class Program {
     const fragment = slang.reflection.entryPoints.find((e) => e.stage === 'fragment');
     if (vertex && fragment) {
       const points = vertex.userAttribs?.some((a) => a.name === 'Points') ?? false;
-      this.perCell = vertex.userAttribs?.find((a) => a.name === 'PerCell')?.arguments[0] ?? null;
-      this.fixedVertices = vertex.userAttribs?.find((a) => a.name === 'Vertices')?.arguments[0] ?? null;
+      const count = (name: string) => {
+        const value = vertex.userAttribs?.find((a) => a.name === name)?.arguments[0];
+        return value === undefined ? null : Number(value);
+      };
+      this.perCell = count('PerCell');
+      this.fixedVertices = count('Vertices');
       this.renderPipeline = device.createRenderPipeline({
         layout: pipelineLayout,
         vertex: { module, entryPoint: vertex.name },
@@ -145,14 +163,18 @@ export class Program {
   }
 
   compute(encoder: GPUCommandEncoder, columns: number, rows: number) {
-    if (this.computePasses.length === 0) return;
-    const pass = encoder.beginComputePass();
-    pass.setBindGroup(0, this.bindGroup);
-    for (const { pipeline, iterations } of this.computePasses) {
-      pass.setPipeline(pipeline);
-      for (let i = 0; i < iterations; i++) pass.dispatchWorkgroups(columns, rows);
+    if (this.computePasses.length > 0) {
+      const pass = encoder.beginComputePass();
+      pass.setBindGroup(0, this.bindGroup);
+      for (const { pipeline, iterations } of this.computePasses) {
+        pass.setPipeline(pipeline);
+        for (let i = 0; i < iterations; i++) pass.dispatchWorkgroups(columns, rows);
+      }
+      pass.end();
     }
-    pass.end();
+    for (const { from, to } of this.snapshots) {
+      encoder.copyBufferToBuffer(from, 0, to, 0, Math.min(from.size, to.size));
+    }
   }
 
   draw(pass: GPURenderPassEncoder, columns: number, rows: number) {

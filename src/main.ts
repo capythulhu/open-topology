@@ -12,6 +12,7 @@ import * as clusters from './effects/clusters.slang';
 import * as contours from './effects/contours.slang';
 import * as normals from './effects/normals.slang';
 import * as sparks from './effects/sparks.slang';
+import * as hologram from './effects/hologram.slang';
 import * as water from './effects/water.slang';
 
 const ENGINE_BYTES = 48;
@@ -27,7 +28,7 @@ const FIELDS: Record<string, { columns: number; rows: number }> = {
 };
 
 const SOURCES: Record<string, SlangModule> = { noise, kinect };
-const EFFECTS: Record<string, SlangModule> = { contours, water, clusters, sparks, normals };
+const EFFECTS: Record<string, SlangModule> = { contours, water, clusters, sparks, hologram, normals };
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
@@ -58,7 +59,7 @@ async function main() {
   const fieldBuffer = () =>
     device.createBuffer({
       size: field.columns * field.rows * 4,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC,
     });
   let heights = fieldBuffer();
   let rawHeights = fieldBuffer();

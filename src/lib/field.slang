@@ -20,6 +20,12 @@ struct PerCellAttribute { int n; }
 [__AttributeUsage(_AttributeTargets.Function)]
 struct VerticesAttribute { int n; }
 
+// On a read-only buffer: a copy of the named read-write buffer, taken after the
+// compute passes. A vertex shader may not read read-write storage at all, so
+// this is how geometry gets built from something a compute pass produced.
+[__AttributeUsage(_AttributeTargets.Var)]
+struct SnapshotAttribute { string source; }
+
 // heightMm is what the -0.5..0.5 height range means in the real world, so
 // physical settings like a contour interval can be written in millimetres.
 struct Engine {
