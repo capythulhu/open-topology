@@ -8,7 +8,13 @@ export async function initGpu(canvas: HTMLCanvasElement): Promise<Gpu> {
   const adapter = await navigator.gpu?.requestAdapter();
   if (!adapter) throw new Error('WebGPU unavailable — open this in Chrome or Edge.');
 
-  const device = await adapter.requestDevice();
+  // The default is eight storage buffers per stage, which a real effect walks
+  // into quickly. Ask for whatever this adapter can actually do.
+  const device = await adapter.requestDevice({
+    requiredLimits: {
+      maxStorageBuffersPerShaderStage: adapter.limits.maxStorageBuffersPerShaderStage,
+    },
+  });
   const context = canvas.getContext('webgpu');
   if (!context) throw new Error('Could not create a WebGPU canvas context.');
 

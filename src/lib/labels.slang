@@ -16,6 +16,7 @@ static const uint UNIT_CM2 = 2;
 static const uint UNIT_ML = 3;
 static const uint UNIT_MM_S = 4;
 static const uint UNIT_DEG = 5;
+static const uint UNIT_COUNT = 6;
 
 struct Label {
     float2 cell;

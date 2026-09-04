@@ -31,14 +31,61 @@ export const MAX_LABELS = 64;
 const ALL_STAGES = GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT | GPUShaderStage.COMPUTE;
 const BINDING = /@binding\((\d+)\)\s+@group\(0\)\s+var<\s*(uniform|storage)\s*(?:,\s*(read|read_write)\s*)?>\s*(\w+)/g;
 
-type Slot = { name: string; index: number; type: GPUBufferBindingType };
+type Slot = { name: string; symbol: string; index: number; type: GPUBufferBindingType };
 
 function slotsOf(code: string): Slot[] {
   return [...code.matchAll(BINDING)].map((m) => ({
     index: Number(m[1]),
+    symbol: m[4],
     name: m[4].replace(/_\d+$/, ''),
     type: m[2] === 'uniform' ? 'uniform' : m[3] === 'read_write' ? 'storage' : 'read-only-storage',
   }));
+}
+
+// Each stage may only see so many storage buffers, and the count is taken from
+// the layout, not from what a shader touches. Reflection lists every global for
+// every entry point, so usage has to come from the WGSL: walk each entry
+// point's call graph and note which buffers it actually reaches.
+function bodiesOf(code: string): Map<string, string> {
+  const bodies = new Map<string, string>();
+  const heads = /\bfn\s+(\w+)\s*\(/g;
+  for (const head of code.matchAll(heads)) {
+    let at = code.indexOf('{', head.index);
+    if (at < 0) continue;
+    let depth = 0;
+    const start = at;
+    for (; at < code.length; at++) {
+      if (code[at] === '{') depth++;
+      else if (code[at] === '}' && --depth === 0) break;
+    }
+    bodies.set(head[1], code.slice(start, at + 1));
+  }
+  return bodies;
+}
+
+function visibilityOf(code: string, slots: Slot[], entries: EntryPoint[]): Map<number, number> {
+  const bodies = bodiesOf(code);
+  const stageBit = { vertex: GPUShaderStage.VERTEX, fragment: GPUShaderStage.FRAGMENT, compute: GPUShaderStage.COMPUTE };
+  const visible = new Map<number, number>();
+
+  for (const entry of entries) {
+    const reached = new Set<string>();
+    const pending = [entry.name];
+    while (pending.length > 0) {
+      const name = pending.pop()!;
+      if (reached.has(name)) continue;
+      reached.add(name);
+      const body = bodies.get(name) ?? '';
+      for (const call of body.matchAll(/\b(\w+)\s*\(/g)) if (bodies.has(call[1])) pending.push(call[1]);
+    }
+    const touched = [...reached].map((name) => bodies.get(name) ?? '').join('\n');
+    for (const slot of slots) {
+      if (new RegExp(`\\b${slot.symbol}\\b`).test(touched)) {
+        visible.set(slot.index, (visible.get(slot.index) ?? 0) | stageBit[entry.stage]);
+      }
+    }
+  }
+  return visible;
 }
 
 function paramsOf(reflection: Reflection): Param[] {
@@ -135,10 +182,13 @@ export class Program {
     }
 
     // read_write storage is illegal in the vertex stage, so those bindings skip it.
+    const visible = visibilityOf(slang.code, slots, slang.reflection.entryPoints);
     const layout = device.createBindGroupLayout({
       entries: slots.map((s) => ({
         binding: s.index,
-        visibility: s.type === 'storage' ? ALL_STAGES & ~GPUShaderStage.VERTEX : ALL_STAGES,
+        visibility:
+          (visible.get(s.index) ?? GPUShaderStage.COMPUTE) &
+          (s.type === 'storage' ? ALL_STAGES & ~GPUShaderStage.VERTEX : ALL_STAGES),
         buffer: { type: s.type },
       })),
     });
