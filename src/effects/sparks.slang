@@ -34,8 +34,12 @@ Dot vertexMain(uint vid: SV_VertexID) {
     o.tile = 0.0;
 
     if (h < cutoff) {
+        // Lines fall on multiples of the spacing, which never lands on the far
+        // edges, so those are drawn explicitly to close the border.
         uint every = uint(max(grid, 1.0));
-        if (p.x % every != 0u && p.y % every != 0u) {
+        bool onLine = p.x % every == 0u || p.y % every == 0u;
+        bool onEdge = p.x == engine.size.x - 1 || p.y == engine.size.y - 1;
+        if (!onLine && !onEdge) {
             o.clip = CULLED;
             return o;
         }
