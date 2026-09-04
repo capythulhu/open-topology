@@ -5,7 +5,7 @@
 // resolution; each is a thin quad the full span of the field.
 
 [Param(16.0, 0.0, 64.0)]  uniform float spacing;
-[Param(-0.5, -0.5, 0.5)]  uniform float level;
+[Param(0.0, -0.5, 0.5)]   uniform float level;
 
 static const uint MAX_LINES = 256;
 static const float WIDTH = 0.0022;
