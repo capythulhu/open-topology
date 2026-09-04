@@ -4,7 +4,7 @@ RWStructuredBuffer<float> heights;
 RWStructuredBuffer<float> rawHeights;
 
 [Param(4.0, 0.5, 16.0)]  uniform float frequency;
-[Param(0.7, 0.0, 1.0)]   uniform float amplitude;
+[Param(0.5, 0.0, 1.0)]   uniform float amplitude;
 [Param(200.0, 20.0, 600.0)] uniform float relief;
 [Param(0.06, 0.0, 1.0)]  uniform float speed;
 [Param(4.0, 1.0, 6.0)]   uniform float octaves;
@@ -42,7 +42,9 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 uv = float2(tid.xy) / float2(engine.size);
     float t = engine.time * speed;
     float h = fbm(uv * frequency + float2(t, t * 0.6), int(octaves));
+    // Rises from 0 rather than straddling it, so the floor sits where the grid
+    // and a calibrated sensor both put it.
     uint i = cellIndex(tid.xy);
-    heights[i] = (h - 0.5) * amplitude;
+    heights[i] = h * amplitude;
     rawHeights[i] = heights[i];
 }

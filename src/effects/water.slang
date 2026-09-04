@@ -1,7 +1,7 @@
 #include "../lib/render.slang"
 #include "../lib/color.slang"
 
-[Param(0.0, -0.5, 0.5)]    uniform float level;
+[Param(0.2, -0.5, 0.5)]    uniform float level;
 [Param(0.08, 0.005, 0.5)]  uniform float fill;
 [Param(0.18, 0.02, 0.6)]   uniform float flowRate;
 [Param(60.0, 5.0, 300.0)]  uniform float fadeMm;
