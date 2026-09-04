@@ -7,6 +7,15 @@ struct ParamAttribute { float value; float lo; float hi; }
 [__AttributeUsage(_AttributeTargets.Function)]
 struct IterationsAttribute { int n; }
 
+// On a vertex entry point: draw as points rather than triangles, and how many
+// vertices to issue per field cell. Without PerCell the count is the shared
+// quad grid, (columns - 1) * (rows - 1) * 6.
+[__AttributeUsage(_AttributeTargets.Function)]
+struct PointsAttribute {}
+
+[__AttributeUsage(_AttributeTargets.Function)]
+struct PerCellAttribute { int n; }
+
 // heightMm is what the -0.5..0.5 height range means in the real world, so
 // physical settings like a contour interval can be written in millimetres.
 struct Engine {

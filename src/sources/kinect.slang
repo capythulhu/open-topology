@@ -10,6 +10,7 @@ static const uint DEPTH_HEIGHT = 480;
 struct Ground { float a; float b; float c; float spread; float captured; }
 
 RWStructuredBuffer<float> heights;
+RWStructuredBuffer<float> rawHeights;
 StructuredBuffer<uint> depth;
 StructuredBuffer<uint> reference;
 ConstantBuffer<Ground> ground;
@@ -117,5 +118,6 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float target = clamp(sign(deviation) * beyond / max(ground.spread, 1.0), -1.0, 1.0) * 0.5 * height;
 
     uint i = cellIndex(tid.xy);
+    rawHeights[i] = target;
     heights[i] = lerp(target, heights[i], smoothing);
 }

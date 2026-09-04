@@ -65,6 +65,6 @@ Only one reader can hold the device at a time, so a second dev server or a stray
 
 ## Status
 
-Early, but it runs. Animated noise terrain in 3D with four effects, including a shallow-water simulation. Sensor input, projector output, and calibration are not built yet.
+Early, but it runs. Animated noise terrain in 3D with five effects, including a shallow-water simulation and a point-cloud effect that draws its own geometry. Sensor input, projector output, and calibration are not built yet.
 
 MIT.

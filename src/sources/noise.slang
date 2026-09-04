@@ -1,6 +1,7 @@
 #include "../lib/field.slang"
 
 RWStructuredBuffer<float> heights;
+RWStructuredBuffer<float> rawHeights;
 
 [Param(4.0, 0.5, 16.0)]  uniform float frequency;
 [Param(0.7, 0.0, 1.0)]   uniform float amplitude;
@@ -41,5 +42,7 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 uv = float2(tid.xy) / float2(engine.size);
     float t = engine.time * speed;
     float h = fbm(uv * frequency + float2(t, t * 0.6), int(octaves));
-    heights[cellIndex(tid.xy)] = (h - 0.5) * amplitude;
+    uint i = cellIndex(tid.xy);
+    heights[i] = (h - 0.5) * amplitude;
+    rawHeights[i] = heights[i];
 }

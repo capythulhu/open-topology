@@ -54,6 +54,7 @@ export class Program {
   private readonly bindGroup: GPUBindGroup;
   private readonly computePasses: { pipeline: GPUComputePipeline; iterations: number }[] = [];
   private readonly renderPipeline: GPURenderPipeline | null = null;
+  private readonly perCell: number | null = null;
   private readonly paramsBuffer: GPUBuffer | null = null;
   private readonly paramsData: Float32Array<ArrayBuffer>;
 
@@ -115,11 +116,13 @@ export class Program {
     const vertex = slang.reflection.entryPoints.find((e) => e.stage === 'vertex');
     const fragment = slang.reflection.entryPoints.find((e) => e.stage === 'fragment');
     if (vertex && fragment) {
+      const points = vertex.userAttribs?.some((a) => a.name === 'Points') ?? false;
+      this.perCell = vertex.userAttribs?.find((a) => a.name === 'PerCell')?.arguments[0] ?? null;
       this.renderPipeline = device.createRenderPipeline({
         layout: pipelineLayout,
         vertex: { module, entryPoint: vertex.name },
         fragment: { module, entryPoint: fragment.name, targets: [{ format }] },
-        primitive: { topology: 'triangle-list' },
+        primitive: { topology: points ? 'point-list' : 'triangle-list' },
         depthStencil: { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' },
       });
     }
@@ -150,8 +153,10 @@ export class Program {
     pass.end();
   }
 
-  draw(pass: GPURenderPassEncoder, vertices: number) {
+  draw(pass: GPURenderPassEncoder, columns: number, rows: number) {
     if (!this.renderPipeline) return;
+    const vertices =
+      this.perCell === null ? (columns - 1) * (rows - 1) * 6 : columns * rows * this.perCell;
     pass.setPipeline(this.renderPipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.draw(vertices);

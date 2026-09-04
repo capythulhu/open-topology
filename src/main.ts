@@ -10,6 +10,7 @@ import * as kinect from './sources/kinect.slang';
 import * as clusters from './effects/clusters.slang';
 import * as contours from './effects/contours.slang';
 import * as normals from './effects/normals.slang';
+import * as sparks from './effects/sparks.slang';
 import * as water from './effects/water.slang';
 
 const ENGINE_BYTES = 48;
@@ -25,7 +26,7 @@ const FIELDS: Record<string, { columns: number; rows: number }> = {
 };
 
 const SOURCES: Record<string, SlangModule> = { noise, kinect };
-const EFFECTS: Record<string, SlangModule> = { contours, water, clusters, normals };
+const EFFECTS: Record<string, SlangModule> = { contours, water, clusters, sparks, normals };
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
@@ -53,13 +54,16 @@ async function main() {
 
   let fieldName = '256 x 256';
   let field = FIELDS[fieldName];
-  let heights = device.createBuffer({
-    size: field.columns * field.rows * 4,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-  });
+  const fieldBuffer = () =>
+    device.createBuffer({
+      size: field.columns * field.rows * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+  let heights = fieldBuffer();
+  let rawHeights = fieldBuffer();
 
   const build = (modules: Record<string, SlangModule>) => {
-    const shared = { engine, heights, depth, ground: groundBuffer, reference };
+    const shared = { engine, heights, rawHeights, depth, ground: groundBuffer, reference };
     const cells = field.columns * field.rows;
     return Object.fromEntries(
       Object.entries(modules).map(([name, module]) => [name, new Program(device, module, shared, cells, format)]),
@@ -79,10 +83,9 @@ async function main() {
     fieldName = name;
     field = FIELDS[name];
     heights.destroy();
-    heights = device.createBuffer({
-      size: field.columns * field.rows * 4,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    });
+    rawHeights.destroy();
+    heights = fieldBuffer();
+    rawHeights = fieldBuffer();
 
     sources = build(SOURCES);
     effects = build(EFFECTS);
@@ -207,7 +210,9 @@ async function main() {
 
     // Otherwise cells the new source never writes — sensor holes, mostly — keep
     // showing the old source's terrain.
-    device.queue.writeBuffer(heights, 0, new Float32Array(field.columns * field.rows));
+    const blank = new Float32Array(field.columns * field.rows);
+    device.queue.writeBuffer(heights, 0, blank);
+    device.queue.writeBuffer(rawHeights, 0, blank);
     draw();
 
     if (name !== 'kinect') return;
@@ -321,7 +326,7 @@ async function main() {
         depthStoreOp: 'store',
       },
     });
-    effect.draw(pass, (field.columns - 1) * (field.rows - 1) * 6);
+    effect.draw(pass, field.columns, field.rows);
     pass.end();
 
     device.queue.submit([encoder.finish()]);
