@@ -142,7 +142,7 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
     label.cell = cap.centre;
     label.height = cap.height / engine.heightMm;
     label.shown = 1;
-    label.reserved = 0;
+    label.tag = TAG_NONE;
 
     label.unit = UNIT_MM;
     label.value = cap.radius;

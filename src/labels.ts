@@ -6,13 +6,15 @@ export type Placed = {
   value: number;
   unit: number;
   line: number;
+  tag: number;
 };
 
 // Mirrors lib/labels.slang: 32 bytes, float2 cell, float height, float value,
-// then unit, line, shown, reserved as uints.
+// then unit, line, shown, tag as uints.
 const STRIDE = 32;
 const UNITS = ['', 'mm', 'cm²', 'mL', 'mm/s', '°', '', '%'];
 const DECIMALS = [2, 0, 0, 0, 0, 0, 0, 0];
+const TAGS = ['', 'L', 'W', 'H', 'r'];
 
 export const LABELS_BYTES = MAX_LABELS * STRIDE;
 
@@ -29,6 +31,7 @@ export function parseLabels(bytes: ArrayBuffer): Placed[] {
       value: floats[at + 3],
       unit: uints[at + 4],
       line: uints[at + 5],
+      tag: uints[at + 7],
     });
   }
   return out;
@@ -52,7 +55,7 @@ export function drawLabels(
     const at = project(label.cell, label.height);
     const x = (at.x + 10) * scale;
     const y = (at.y - 10 + label.line * 15) * scale;
-    const text = `${label.value.toFixed(DECIMALS[label.unit] ?? 1)} ${UNITS[label.unit] ?? ''}`.trim();
+    const text = `${TAGS[label.tag] ?? ''} ${label.value.toFixed(DECIMALS[label.unit] ?? 1)} ${UNITS[label.unit] ?? ''}`.trim();
 
     if (label.line === 0) {
       context.fillStyle = '#ffffff';

@@ -8,8 +8,9 @@ struct ParamAttribute { float value; float lo; float hi; }
 struct IterationsAttribute { int n; }
 
 // On a vertex entry point: draw as points rather than triangles, and how many
-// vertices to issue per field cell. Without PerCell the count is the shared
-// quad grid, (columns - 1) * (rows - 1) * 6.
+// vertices to issue per field cell. Without PerCell or Vertices the count is the
+// shared quad grid, (columns - 1) * (rows - 1) * 6. With both, the per-cell
+// vertices come first and the fixed ones after.
 [__AttributeUsage(_AttributeTargets.Function)]
 struct PointsAttribute {}
 

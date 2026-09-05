@@ -1,15 +1,13 @@
 #include "../lib/render.slang"
+#include "../lib/components.slang"
 #include "../lib/color.slang"
 #include "../lib/labels.slang"
 
 // Finds every raised object and measures it: peak height, footprint, and
-// volume, in millimetres, cm², and mL, lettered beside each one. The first
-// three passes are the clusters effect; the rest is accounting.
+// volume, in millimetres, cm², and mL, lettered beside each one. The finding
+// is components.slang; this file is the accounting.
 
-[Param(0.03, 0.0, 0.3)]     uniform float cutoff;
 [Param(80.0, 4.0, 3000.0)]  uniform float minCells;
-
-static const uint NONE = 0xFFFFFFFFu;
 
 // Heights are summed as integers in these units so the atomics can do it.
 static const float QUANTA = 4096.0;
@@ -22,20 +20,15 @@ struct Region {
     Atomic<uint> sumY;
 }
 
-RWStructuredBuffer<Atomic<uint>> owner;
 RWStructuredBuffer<Region> regions;
 RWStructuredBuffer<Atomic<uint>> taken;
 [Labels] RWStructuredBuffer<Label> labels;
 
-uint ownerAt(int2 p) { return owner[p.y * int(engine.size.x) + p.x].load(); }
-
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void seed(uint3 tid: SV_DispatchThreadID) {
+void reset(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
     uint i = cellIndex(tid.xy);
-    owner[i].store(heightAt(int2(tid.xy)) > cutoff ? i : NONE);
-
     regions[i].count.store(0);
     regions[i].sum.store(0);
     regions[i].peak.store(0);
@@ -43,33 +36,6 @@ void seed(uint3 tid: SV_DispatchThreadID) {
     regions[i].sumY.store(0);
     if (i < MAX_LABELS) labels[i].shown = 0;
     if (i == 0) taken[0].store(0);
-}
-
-[shader("compute")]
-[numthreads(8, 8, 1)]
-[Iterations(16)]
-void merge(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint i = cellIndex(tid.xy);
-    uint self = owner[i].load();
-    if (self == NONE) return;
-
-    uint best = self;
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-            int2 q = int2(tid.xy) + int2(dx, dy);
-            if (any(q < int2(0)) || any(q >= int2(engine.size))) continue;
-            uint l = ownerAt(q);
-            if (l != NONE) best = min(best, l);
-        }
-    }
-
-    if (best < self) {
-        owner[self].min(best);
-        owner[i].min(best);
-    }
-    uint root = owner[i].load();
-    owner[i].min(owner[root].load());
 }
 
 [shader("compute")]
@@ -110,7 +76,7 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
     label.cell = float2(regions[i].sumX.load(), regions[i].sumY.load()) / float(count);
     label.height = peak;
     label.shown = 1;
-    label.reserved = 0;
+    label.tag = TAG_NONE;
 
     label.unit = UNIT_MM;
     label.value = peak * engine.heightMm;

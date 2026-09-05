@@ -263,9 +263,12 @@ export class Program {
 
   draw(pass: GPURenderPassEncoder, columns: number, rows: number) {
     if (!this.renderPipeline) return;
+    // PerCell scales with the field, Vertices is a fixed extra on top; an
+    // effect with both draws its per-cell geometry first and the fixed part after.
     const vertices =
-      this.fixedVertices ??
-      (this.perCell === null ? (columns - 1) * (rows - 1) * 6 : columns * rows * this.perCell);
+      this.perCell === null && this.fixedVertices === null
+        ? (columns - 1) * (rows - 1) * 6
+        : columns * rows * (this.perCell ?? 0) + (this.fixedVertices ?? 0);
     pass.setPipeline(this.renderPipeline);
     pass.setBindGroup(0, this.bindGroup);
     pass.draw(vertices);

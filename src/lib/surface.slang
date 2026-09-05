@@ -19,11 +19,15 @@ float2 fieldExtent() {
     return float2(engine.size) / float(max(engine.size.x, engine.size.y));
 }
 
-float3 cellWorld(uint2 p, float h) {
-    float2 uv = float2(p) / float2(engine.size - 1);
+// Any point in cell coordinates, not just cell centres — box corners and fitted
+// shapes land between cells.
+float3 pointWorld(float2 cell, float h) {
+    float2 uv = cell / float2(engine.size - 1);
     float2 extent = fieldExtent();
     return float3((uv.x - 0.5) * extent.x, h * engine.heightScale, (uv.y - 0.5) * extent.y);
 }
+
+float3 cellWorld(uint2 p, float h) { return pointWorld(float2(p), h); }
 
 float3 orbit(float3 p) {
     float cy = cos(engine.yaw), sy = sin(engine.yaw);
