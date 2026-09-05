@@ -7,8 +7,9 @@
 // are integrated through it and drawn as ribbons coloured by speed.
 
 [Param(1.4, 0.2, 4.0)]   uniform float wind;
-[Param(32.0, 8.0, 48.0)] uniform float lines;
-[Param(1.6, 0.8, 4.0)]   uniform float hot;
+[Param(24.0, 8.0, 48.0)] uniform float lines;
+[Param(0.35, 0.1, 3.0)]  uniform float hot;
+[Param(26.0, 10.0, 60.0)] uniform float spacing;
 
 static const uint LAYERS = 16;
 static const float THICK = 0.5 / float(LAYERS);
@@ -143,8 +144,8 @@ void project(uint3 tid: SV_DispatchThreadID) {
 }
 
 // One thread per streamline: seeded up the left edge in a few rows of height,
-// stepped through the flow at a fixed stride. Each point keeps its speed, which
-// is the colour and, at zero, the end of the line.
+// stepped through the flow at a fixed stride. Each point keeps the pressure it
+// passes through; a point with x below zero is past the end of the line.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void trace(uint3 tid: SV_DispatchThreadID) {
@@ -163,9 +164,16 @@ void trace(uint3 tid: SV_DispatchThreadID) {
 
     for (uint m = 0; m < STEPS; m++) {
         float3 v = fieldSmooth(velocity, p);
-        float speed = length(v);
-        if (speed < 0.02) alive = false;
-        path[n * STEPS + m] = float4(p.xy, (p.z + 0.5) * THICK, alive ? speed : 0.0);
+        if (length(v) < 0.02) alive = false;
+        // Relative to the free stream straight above, which strips the inlet-to-
+        // outlet ramp the solve builds up and leaves only what the terrain does.
+        int3 voxel = int3(round(p));
+        float here = 0.0;
+        if (insideXY(voxel.xy)) {
+            uint column = at(voxel.xy);
+            here = pressure[column].s[clamp(voxel.z, 0, int(LAYERS) - 1)] - pressure[column].s[LAYERS - 1];
+        }
+        path[n * STEPS + m] = alive ? float4(p.xy, (p.z + 0.5) * THICK, here) : float4(-1.0, 0.0, 0.0, 0.0);
         if (!alive) continue;
 
         float3 v2 = fieldSmooth(velocity, p + normalize(v) * STRIDE * 0.5);
@@ -179,7 +187,9 @@ struct Ribbon {
     float4 clip : SV_Position;
     float2 uv : UV;
     float arc : ARC;
-    float speed : SPEED;
+    float side : SIDE;
+    float push : PUSH;
+    float phase : PHASE;
     float kind : KIND;
 };
 
@@ -193,7 +203,9 @@ Ribbon vertexMain(uint vid: SV_VertexID) {
     Ribbon o;
     o.uv = float2(0.0);
     o.arc = 0.0;
-    o.speed = 0.0;
+    o.side = 0.0;
+    o.push = 0.0;
+    o.phase = 0.0;
     o.kind = 0.0;
 
     uint cells = engine.size.x * engine.size.y;
@@ -213,19 +225,23 @@ Ribbon vertexMain(uint vid: SV_VertexID) {
     uint step = segment % (STEPS - 1);
     float4 a = curve[line * STEPS + step];
     float4 b = curve[line * STEPS + step + 1];
-    if (line >= uint(lines) * ROWS || a.w <= 0.0 || b.w <= 0.0) { o.clip = CULLED; return o; }
+    if (line >= uint(lines) * ROWS || a.x < 0.0 || b.x < 0.0) { o.clip = CULLED; return o; }
 
+    // Wide enough for an arrowhead; the fragment shader cuts the shape out.
     float2 corner = CORNERS[e % 6];
     float4 from = project(pointWorld(a.xy, a.z));
     float4 to = project(pointWorld(b.xy, b.z));
     float2 dir = normalize((to.xy - from.xy) * float2(engine.aspect, 1.0) + 1e-6);
-    float2 side = float2(-dir.y, dir.x) * 0.0022 * float2(1.0 / engine.aspect, 1.0);
+    float2 side = float2(-dir.y, dir.x) * 0.0055 * float2(1.0 / engine.aspect, 1.0);
     bool start = corner.x < 0.0;
     float4 base = start ? from : to;
 
     o.clip = float4(base.xy + side * corner.y, base.z - 0.002, 1.0);
     o.arc = float(start ? step : step + 1) * STRIDE;
-    o.speed = start ? a.w : b.w;
+    o.side = corner.y;
+    o.push = start ? a.w : b.w;
+    // Every line gets its own offset, so the arrows do not march in lockstep.
+    o.phase = frac(float(line) * 0.618034);
     o.kind = 1.0;
     return o;
 }
@@ -244,8 +260,18 @@ float3 heat(float t) {
 [shader("fragment")]
 float4 fragmentMain(Ribbon r) : SV_Target {
     if (r.kind > 0.5) {
-        float dash = 0.45 + 0.55 * smoothstep(0.3, 0.7, frac(r.arc * 0.09 - engine.time * wind * 0.6));
-        return float4(heat(r.speed / (wind * hot)) * dash, 1.0);
+        // Where along its arrow this fragment falls, 0 at the tail, 1 at the tip,
+        // sliding along the line at the wind speed. A narrow shaft, a triangular
+        // head, and open air between one arrow and the next.
+        float t = frac(r.arc / spacing - engine.time * wind * 0.5 / spacing * STRIDE + r.phase);
+        float across = abs(r.side);
+        bool shaft = t < 0.55 && across < 0.22;
+        bool head = t >= 0.55 && t < 0.82 && across < (0.82 - t) / 0.27;
+        if (!shaft && !head) discard;
+
+        // Positive pressure is the wind pressing on something; negative is the
+        // suction behind it. Zero, the free stream, sits mid-palette.
+        return float4(heat(0.5 + r.push / (wind * wind * hot)), 1.0);
     }
     return float4(float3(0.09, 0.10, 0.13) * (0.5 + 0.5 * shading(r.uv)), 1.0);
 }
