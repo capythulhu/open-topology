@@ -1,33 +1,45 @@
 #include "../lib/surface.slang"
+#include "../lib/components.slang"
+#include "../lib/labels.slang"
 
 // A wind tunnel over the field, in three dimensions. A 3D incompressible flow
 // — advected, made divergence-free by a pressure relax — blows in from the
 // left, with the terrain itself as the solid boundary, so the wind goes over
-// what it can and around what it cannot. Streamlines seeded at several heights
-// are integrated through it and drawn as ribbons coloured by speed.
+// what it can and around what it cannot. The surface is painted by the pressure
+// on it — red where the wind strikes, blue in the suction behind — streamlines
+// seeded at several heights are drawn as trains of arrows coloured by speed,
+// and each object is lettered with the pressure on its windward face.
 
-[Param(1.4, 0.2, 4.0)]   uniform float wind;
-[Param(24.0, 8.0, 48.0)] uniform float lines;
-[Param(0.35, 0.1, 3.0)]  uniform float hot;
-[Param(26.0, 10.0, 60.0)] uniform float spacing;
+[Param(1.4, 0.2, 4.0)]    uniform float wind;
+[Param(16.0, 6.0, 40.0)]  uniform float lines;
+[Param(34.0, 12.0, 80.0)] uniform float spacing;
 
 static const uint LAYERS = 16;
 static const float THICK = 0.5 / float(LAYERS);
-static const uint MAX_LINES = 48;
+static const uint MAX_LINES = 40;
 static const uint ROWS = 3;
 static const uint STEPS = 160;
 static const float STRIDE = 1.5;
+static const float QUANTA = 4096.0;
 
 // One column of voxels per cell, which is how a 3D grid fits a per-cell buffer.
 struct Column { float4 v[LAYERS]; }
 struct Scalars { float s[LAYERS]; }
 
+struct Region {
+    Atomic<uint> peak;
+    Atomic<uint> where;
+}
+
 RWStructuredBuffer<Column> velocity;
 RWStructuredBuffer<Column> carried;
 RWStructuredBuffer<Scalars> pressure;
 RWStructuredBuffer<Scalars> divergence;
+RWStructuredBuffer<Region> regions;
+RWStructuredBuffer<Atomic<uint>> gauge;
 RWStructuredBuffer<float4> path;
 [Snapshot("path")] StructuredBuffer<float4> curve;
+[Labels] RWStructuredBuffer<Label> labels;
 
 bool insideXY(int2 p) { return all(p >= int2(0)) && all(p < int2(engine.size)); }
 uint at(int2 p) { int2 q = clampCell(p); return uint(q.y) * engine.size.x + uint(q.x); }
@@ -68,18 +80,51 @@ float pressureAt(int3 v, float own) {
     return pressure[at(v.xy)].s[v.z];
 }
 
+// Pressure relative to the free stream straight above, which strips the inlet-
+// to-outlet ramp the solve builds up and leaves only what the terrain does.
+float pushAt(int3 v) {
+    if (!insideXY(v.xy)) return 0.0;
+    uint column = at(v.xy);
+    return pressure[column].s[clamp(v.z, 0, int(LAYERS) - 1)] - pressure[column].s[LAYERS - 1];
+}
+
+// Full stagnation — the wind brought to a dead stop — raises pressure by half
+// the speed squared, so impact reads as a percentage of that.
+float stagnation() { return 0.5 * wind * wind; }
+
+// The pressure on the ground at a cell: the first air voxel above it.
+float onSurface(int2 p) {
+    int z = clamp(int(ceil(heightAt(p) / THICK)), 0, int(LAYERS) - 1);
+    return pushAt(int3(p, z));
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void reset(uint3 tid: SV_DispatchThreadID) {
+    if (any(tid.xy >= engine.size)) return;
+    uint i = cellIndex(tid.xy);
+    regions[i].peak.store(0);
+    regions[i].where.store(NONE);
+    if (i < MAX_LABELS) labels[i].shown = 0;
+    if (i == 0) gauge[0].store(0);
+}
+
 // Every voxel is drawn gently toward the free-stream wind. Left to the pressure
 // solve alone the wind takes many seconds to cross the field; starting from the
 // free stream leaves the solve only the local job of bending it over and
-// around the terrain, which it does in a frame.
+// around the terrain, which it does in a frame. The pull fades to nothing in
+// the few layers above the ground, so there the solve alone decides and the
+// flow can actually climb a face instead of being dragged flat into it.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void blow(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
     uint i = cellIndex(tid.xy);
+    float ground = heightAt(int2(tid.xy)) / THICK;
     for (int z = 0; z < int(LAYERS); z++) {
         float3 v = velocity[i].v[z].xyz;
-        velocity[i].v[z] = float4(solid(int3(tid.xy, z)) ? float3(0.0) : lerp(v, float3(wind, 0.0, 0.0), 0.04), 0.0);
+        float pull = 0.05 * saturate((float(z) - ground) / 5.0);
+        velocity[i].v[z] = float4(solid(int3(tid.xy, z)) ? float3(0.0) : lerp(v, float3(wind, 0.0, 0.0), pull), 0.0);
     }
 }
 
@@ -143,9 +188,100 @@ void project(uint3 tid: SV_DispatchThreadID) {
     }
 }
 
+// An air voxel with solid immediately downwind of it is touching a windward
+// face; its pressure is what the wind is doing to that face. The highest such
+// pressure on each object is its impact, and the highest overall sets the scale.
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void impact(uint3 tid: SV_DispatchThreadID) {
+    if (any(tid.xy >= engine.size)) return;
+    int2 p = int2(tid.xy);
+    int2 downwind = p + int2(1, 0);
+    if (!insideXY(downwind)) return;
+    uint root = ownerAt(downwind);
+    if (root == NONE) return;
+
+    float strongest = 0.0;
+    for (int z = 0; z < int(LAYERS); z++) {
+        int3 here = int3(p, z);
+        if (solid(here) || !solid(int3(downwind, z))) continue;
+        strongest = max(strongest, pushAt(here));
+    }
+    if (strongest <= 0.0) return;
+
+    uint quantised = uint(strongest * QUANTA);
+    regions[root].peak.max(quantised);
+    gauge[0].max(quantised);
+}
+
+// The cell that produced each region's peak, found by matching.
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void locate(uint3 tid: SV_DispatchThreadID) {
+    if (any(tid.xy >= engine.size)) return;
+    int2 p = int2(tid.xy);
+    int2 downwind = p + int2(1, 0);
+    if (!insideXY(downwind)) return;
+    uint root = ownerAt(downwind);
+    if (root == NONE) return;
+    uint peak = regions[root].peak.load();
+    if (peak == 0) return;
+
+    for (int z = 0; z < int(LAYERS); z++) {
+        int3 here = int3(p, z);
+        if (solid(here) || !solid(int3(downwind, z))) continue;
+        if (uint(pushAt(here) * QUANTA) == peak) {
+            regions[root].where.min(cellIndex(tid.xy));
+            return;
+        }
+    }
+}
+
+// The palette scale follows the strongest impact in frame, eased so it does
+// not flicker, so red always means the hardest hit there is right now.
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void settle(uint3 tid: SV_DispatchThreadID) {
+    if (any(tid.xy) || any(tid.xy >= engine.size)) return;
+    float now = float(gauge[0].load()) / QUANTA;
+    float was = asfloat(gauge[1].load());
+    gauge[1].store(asuint(lerp(was, max(now, 0.05 * stagnation()), 0.08)));
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void annotate(uint3 tid: SV_DispatchThreadID) {
+    if (any(tid.xy >= engine.size)) return;
+    uint i = cellIndex(tid.xy);
+    if (owner[i].load() != i) return;
+    uint where = regions[i].where.load();
+    if (where == NONE) return;
+
+    // Slot by root order is not stable, so labels are claimed by hashing the
+    // root into the table and walking forward — good enough for a handful.
+    uint slot = (i * 2654435761u) % MAX_LABELS;
+    for (uint tries = 0; tries < MAX_LABELS; tries++) {
+        uint candidate = (slot + tries) % MAX_LABELS;
+        if (labels[candidate].shown == 0) { slot = candidate; break; }
+    }
+
+    uint2 cell = uint2(where % engine.size.x, where / engine.size.x);
+    Label label;
+    label.cell = float2(cell);
+    label.height = heightAt(int2(cell)) + 0.03;
+    label.value = float(regions[i].peak.load()) / QUANTA / stagnation() * 100.0;
+    label.unit = UNIT_PERCENT;
+    label.tag = TAG_IMPACT;
+    label.line = 0;
+    label.shown = 1;
+    labels[slot] = label;
+}
+
 // One thread per streamline: seeded up the left edge in a few rows of height,
-// stepped through the flow at a fixed stride. Each point keeps the pressure it
-// passes through; a point with x below zero is past the end of the line.
+// stepped through the flow at a fixed stride. Each point carries its speed as
+// a fraction of the wind; a point with x below zero is past the end of the
+// line. Points are eased toward last frame's so the lines hold still through
+// the solve's small frame-to-frame jitter.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void trace(uint3 tid: SV_DispatchThreadID) {
@@ -165,15 +301,11 @@ void trace(uint3 tid: SV_DispatchThreadID) {
     for (uint m = 0; m < STEPS; m++) {
         float3 v = fieldSmooth(velocity, p);
         if (length(v) < 0.02) alive = false;
-        // Relative to the free stream straight above, which strips the inlet-to-
-        // outlet ramp the solve builds up and leaves only what the terrain does.
-        int3 voxel = int3(round(p));
-        float here = 0.0;
-        if (insideXY(voxel.xy)) {
-            uint column = at(voxel.xy);
-            here = pressure[column].s[clamp(voxel.z, 0, int(LAYERS) - 1)] - pressure[column].s[LAYERS - 1];
-        }
-        path[n * STEPS + m] = alive ? float4(p.xy, (p.z + 0.5) * THICK, here) : float4(-1.0, 0.0, 0.0, 0.0);
+
+        uint slot = n * STEPS + m;
+        float4 was = path[slot];
+        float3 shown = was.x >= 0.0 && alive ? lerp(was.xyz, float3(p.xy, (p.z + 0.5) * THICK), 0.2) : float3(p.xy, (p.z + 0.5) * THICK);
+        path[slot] = alive ? float4(shown, length(v) / wind) : float4(-1.0, 0.0, 0.0, 0.0);
         if (!alive) continue;
 
         float3 v2 = fieldSmooth(velocity, p + normalize(v) * STRIDE * 0.5);
@@ -198,7 +330,7 @@ static const float2 CORNERS[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1),
 
 [shader("vertex")]
 [PerCell(6)]
-[Vertices(137376)]
+[Vertices(114480)]
 Ribbon vertexMain(uint vid: SV_VertexID) {
     Ribbon o;
     o.uv = float2(0.0);
@@ -232,7 +364,7 @@ Ribbon vertexMain(uint vid: SV_VertexID) {
     float4 from = project(pointWorld(a.xy, a.z));
     float4 to = project(pointWorld(b.xy, b.z));
     float2 dir = normalize((to.xy - from.xy) * float2(engine.aspect, 1.0) + 1e-6);
-    float2 side = float2(-dir.y, dir.x) * 0.0055 * float2(1.0 / engine.aspect, 1.0);
+    float2 side = float2(-dir.y, dir.x) * 0.0085 * float2(1.0 / engine.aspect, 1.0);
     bool start = corner.x < 0.0;
     float4 base = start ? from : to;
 
@@ -263,17 +395,21 @@ float4 fragmentMain(Ribbon r) : SV_Target {
         // Where along its arrow this fragment falls, 0 at the tail, 1 at the tip,
         // sliding along the line at the wind speed. A narrow shaft, a triangular
         // head, and open air between one arrow and the next.
-        // wind is cells per frame; the arrows travel the line at that rate in
-        // real time, which is about forty cells a second at the default.
         float t = frac((r.arc - engine.time * wind * 30.0) / spacing + r.phase);
         float across = abs(r.side);
-        bool shaft = t < 0.55 && across < 0.22;
-        bool head = t >= 0.55 && t < 0.82 && across < (0.82 - t) / 0.27;
+        bool shaft = t < 0.5 && across < 0.2;
+        bool head = t >= 0.5 && t < 0.78 && across < (0.78 - t) / 0.28;
         if (!shaft && !head) discard;
 
-        // Positive pressure is the wind pressing on something; negative is the
-        // suction behind it. Zero, the free stream, sits mid-palette.
-        return float4(heat(0.5 + r.push / (wind * wind * hot)), 1.0);
+        // The free stream sits mid-palette; faster is hotter, slower cooler.
+        return float4(heat(r.push * 0.5), 1.0);
     }
-    return float4(float3(0.09, 0.10, 0.13) * (0.5 + 0.5 * shading(r.uv)), 1.0);
+
+    // The ground wears its pressure: red where the wind presses on it, blue in
+    // the suction behind, scaled to the strongest impact in frame.
+    float scale = max(asfloat(gauge[1].load()), 1e-4);
+    float press = clamp(onSurface(cellOf(r.uv)) / scale, -1.0, 1.0);
+    float3 tint = heat(0.5 + 0.5 * press);
+    float3 dark = float3(0.09, 0.10, 0.13);
+    return float4(lerp(dark, tint * 0.75, 0.35 + 0.55 * abs(press)) * (0.5 + 0.5 * shading(r.uv)), 1.0);
 }

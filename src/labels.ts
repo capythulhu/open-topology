@@ -14,7 +14,7 @@ export type Placed = {
 const STRIDE = 32;
 const UNITS = ['', 'mm', 'cm²', 'mL', 'mm/s', '°', '', '%'];
 const DECIMALS = [2, 0, 0, 0, 0, 0, 0, 0];
-const TAGS = ['', 'L', 'W', 'H', 'r'];
+const TAGS = ['', 'L', 'W', 'H', 'r', 'impact'];
 
 export const LABELS_BYTES = MAX_LABELS * STRIDE;
 

@@ -23,6 +23,7 @@ static const uint TAG_L = 1;
 static const uint TAG_W = 2;
 static const uint TAG_H = 3;
 static const uint TAG_R = 4;
+static const uint TAG_IMPACT = 5;
 static const uint UNIT_COUNT = 6;
 static const uint UNIT_PERCENT = 7;
 
