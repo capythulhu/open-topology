@@ -37,6 +37,52 @@ export function parseLabels(bytes: ArrayBuffer): Placed[] {
   return out;
 }
 
+// Labels are recomputed from scratch every frame, so anything jittery upstream
+// — a sensor edge, an impact point hopping along a face — makes them jump and
+// blink. Each incoming label is matched to the nearest one shown last frame
+// with the same meaning and eased toward it, and a label that vanishes is held
+// briefly rather than dropped, so a momentary dropout is not a blink.
+export function createStabilizer() {
+  type Tracked = Placed & { missing: number };
+  let tracked: Tracked[] = [];
+
+  return (incoming: Placed[]): Placed[] => {
+    const claimed = new Set<number>();
+    const next: Tracked[] = [];
+
+    for (const label of incoming) {
+      let best = -1;
+      let nearest = 16;
+      tracked.forEach((t, i) => {
+        if (claimed.has(i) || t.unit !== label.unit || t.tag !== label.tag || t.line !== label.line) return;
+        const d = Math.hypot(t.cell[0] - label.cell[0], t.cell[1] - label.cell[1]);
+        if (d < nearest) {
+          nearest = d;
+          best = i;
+        }
+      });
+
+      if (best < 0) {
+        next.push({ ...label, cell: [label.cell[0], label.cell[1]], missing: 0 });
+        continue;
+      }
+      const t = tracked[best];
+      claimed.add(best);
+      t.cell = [t.cell[0] + (label.cell[0] - t.cell[0]) * 0.2, t.cell[1] + (label.cell[1] - t.cell[1]) * 0.2];
+      t.height += (label.height - t.height) * 0.2;
+      t.value += (label.value - t.value) * 0.12;
+      t.missing = 0;
+      next.push(t);
+    }
+
+    tracked.forEach((t, i) => {
+      if (!claimed.has(i) && ++t.missing < 20) next.push(t);
+    });
+    tracked = next;
+    return tracked;
+  };
+}
+
 export function drawLabels(
   context: CanvasRenderingContext2D,
   labels: Placed[],

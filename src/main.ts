@@ -3,7 +3,7 @@ import { createDepth, initGpu } from './gpu';
 import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
 import { fitGround, spreadAgainst } from './sources/ground';
-import { drawLabels, parseLabels, LABELS_BYTES } from './labels';
+import { createStabilizer, drawLabels, parseLabels, LABELS_BYTES } from './labels';
 import { createPreview } from './sources/preview';
 import * as gridModule from './grid.slang';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
@@ -63,6 +63,7 @@ async function main() {
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
   });
   let reading = false;
+  const stabilize = createStabilizer();
 
   const groundBuffer = device.createBuffer({
     size: 32,
@@ -388,7 +389,7 @@ async function main() {
     if (wantsLabels) {
       reading = true;
       void staging.mapAsync(GPUMapMode.READ).then(() => {
-        const labels = parseLabels(staging.getMappedRange().slice(0));
+        const labels = stabilize(parseLabels(staging.getMappedRange().slice(0)));
         staging.unmap();
         reading = false;
         drawLabels(lettering, labels, projectCell);
