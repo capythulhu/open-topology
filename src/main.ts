@@ -147,10 +147,14 @@ async function main() {
       projectorDepth = null;
       return;
     }
-    if (data?.type === 'projector-size' && data.width > 0 && data.height > 0) {
-      offscreen = new OffscreenCanvas(data.width, data.height);
+    if (data?.type === 'projector-canvas') {
+      offscreen = data.canvas as OffscreenCanvas;
       offscreenContext = offscreen.getContext('webgpu');
       offscreenContext?.configure({ device, format, alphaMode: 'opaque' });
+    }
+    if ((data?.type === 'projector-canvas' || data?.type === 'projector-size') && offscreen && data.width > 0 && data.height > 0) {
+      offscreen.width = data.width;
+      offscreen.height = data.height;
       projectorDepth?.destroy();
       projectorDepth = createDepth(device, data.width, data.height);
     }
@@ -424,9 +428,6 @@ async function main() {
       effect.draw(topDown, field.columns, field.rows);
       topDown.end();
       device.queue.submit([overhead.finish()]);
-
-      const frameImage = offscreen.transferToImageBitmap();
-      projector.postMessage(frameImage, '*', [frameImage]);
     }
 
     if (wantsLabels) {

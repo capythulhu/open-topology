@@ -1,18 +1,13 @@
 const display = document.querySelector<HTMLCanvasElement>('#screen')!;
-const surface = display.getContext('bitmaprenderer')!;
+const canvas = display.transferControlToOffscreen();
 
-const report = () => {
-  display.width = Math.floor(display.clientWidth * devicePixelRatio);
-  display.height = Math.floor(display.clientHeight * devicePixelRatio);
-  window.opener?.postMessage({ type: 'projector-size', width: display.width, height: display.height }, '*');
-};
-
-window.addEventListener('message', (event) => {
-  if (event.source !== window.opener) return;
-  if (event.data instanceof ImageBitmap) surface.transferFromImageBitmap(event.data);
+const size = () => ({
+  width: Math.floor(display.clientWidth * devicePixelRatio),
+  height: Math.floor(display.clientHeight * devicePixelRatio),
 });
 
-window.addEventListener('resize', report);
+window.opener?.postMessage({ type: 'projector-canvas', canvas, ...size() }, '*', [canvas]);
+window.addEventListener('resize', () => window.opener?.postMessage({ type: 'projector-size', ...size() }, '*'));
 window.addEventListener('beforeunload', () => window.opener?.postMessage({ type: 'projector-closed' }, '*'));
 
 const toggleFullscreen = () => {
@@ -23,5 +18,3 @@ window.addEventListener('click', toggleFullscreen);
 window.addEventListener('keydown', (event) => {
   if (event.key === 'f' || event.key === 'F' || event.key === 'Enter') toggleFullscreen();
 });
-
-report();
