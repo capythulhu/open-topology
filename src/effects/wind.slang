@@ -11,6 +11,7 @@
 // and each object is lettered with the pressure on its windward face.
 
 [Param(1.4, 0.2, 4.0)]    uniform float wind;
+[Param(0.0, -180.0, 180.0)] uniform float angle;
 [Param(16.0, 6.0, 40.0)]  uniform float lines;
 [Param(34.0, 12.0, 80.0)] uniform float spacing;
 [Param(3.0, 0.5, 8.0)]    uniform float contrast;
@@ -45,6 +46,31 @@ RWStructuredBuffer<float4> path;
 bool insideXY(int2 p) { return all(p >= int2(0)) && all(p < int2(engine.size)); }
 uint at(int2 p) { int2 q = clampCell(p); return uint(q.y) * engine.size.x + uint(q.x); }
 
+float2 windDir() { float a = radians(angle); return float2(cos(a), sin(a)); }
+float3 freeStream() { return float3(windDir() * wind, 0.0); }
+
+// Which way the wind crosses each edge decides what that edge is: the wind
+// comes in through edges it points away from, leaves through edges it points
+// at, and slides along edges it runs parallel to.
+bool inflowEdge(int2 v) {
+    float2 d = windDir();
+    return (v.x < 0 && d.x > 0.05) || (v.x >= int(engine.size.x) && d.x < -0.05)
+        || (v.y < 0 && d.y > 0.05) || (v.y >= int(engine.size.y) && d.y < -0.05);
+}
+
+bool outflowEdge(int2 v) {
+    float2 d = windDir();
+    return (v.x >= int(engine.size.x) && d.x > 0.05) || (v.x < 0 && d.x < -0.05)
+        || (v.y >= int(engine.size.y) && d.y > 0.05) || (v.y < 0 && d.y < -0.05);
+}
+
+// The two cells nearest an inflow edge, where the wind is reasserted each frame.
+bool atInflow(int2 p) {
+    float2 d = windDir();
+    return (d.x > 0.05 && p.x < 2) || (d.x < -0.05 && p.x >= int(engine.size.x) - 2)
+        || (d.y > 0.05 && p.y < 2) || (d.y < -0.05 && p.y >= int(engine.size.y) - 2);
+}
+
 // Below the ground is solid; so is everything under the floor.
 bool solid(int3 v) {
     if (v.z < 0) return true;
@@ -52,10 +78,10 @@ bool solid(int3 v) {
     return (float(v.z) + 0.5) * THICK < heightAt(v.xy);
 }
 
-// Off the left edge is the wind itself; off any other edge is the nearest
-// cell, which is a slip wall on the sides and top and free outflow on the right.
+// Off an inflow edge is the wind itself; off any other edge is the nearest
+// cell, which is free outflow where the wind leaves and a slip wall elsewhere.
 float3 fieldAt(RWStructuredBuffer<Column> field, int3 v) {
-    if (v.x < 0) return float3(wind, 0.0, 0.0);
+    if (inflowEdge(v.xy)) return freeStream();
     if (solid(v)) return float3(0.0);
     return field[at(v.xy)].v[clamp(v.z, 0, int(LAYERS) - 1)].xyz;
 }
@@ -72,12 +98,12 @@ float3 fieldSmooth(RWStructuredBuffer<Column> field, float3 p) {
     return lerp(low, high, f.z);
 }
 
-// Pressure past the right edge is zero, which is what lets the flow leave; a
+// Pressure past an outflow edge is zero, which is what lets the flow leave; a
 // solid or any other edge reflects the cell's own pressure, which is what stops
 // it passing through.
 float pressureAt(int3 v, float own) {
-    if (v.x >= int(engine.size.x)) return 0.0;
-    if (v.x < 0 || !insideXY(v.xy) || v.z >= int(LAYERS) || solid(v)) return own;
+    if (outflowEdge(v.xy)) return 0.0;
+    if (!insideXY(v.xy) || v.z >= int(LAYERS) || solid(v)) return own;
     return pressure[at(v.xy)].s[v.z];
 }
 
@@ -125,7 +151,7 @@ void blow(uint3 tid: SV_DispatchThreadID) {
     for (int z = 0; z < int(LAYERS); z++) {
         float3 v = velocity[i].v[z].xyz;
         float pull = 0.05 * saturate((float(z) - ground) / 5.0);
-        velocity[i].v[z] = float4(solid(int3(tid.xy, z)) ? float3(0.0) : lerp(v, float3(wind, 0.0, 0.0), pull), 0.0);
+        velocity[i].v[z] = float4(solid(int3(tid.xy, z)) ? float3(0.0) : lerp(v, freeStream(), pull), 0.0);
     }
 }
 
@@ -179,7 +205,7 @@ void project(uint3 tid: SV_DispatchThreadID) {
     for (int z = 0; z < int(LAYERS); z++) {
         int3 p = int3(tid.xy, z);
         if (solid(p)) { velocity[i].v[z] = float4(0.0); continue; }
-        if (tid.x < 2) { velocity[i].v[z] = float4(wind, 0.0, 0.0, 0.0); continue; }
+        if (atInflow(int2(tid.xy))) { velocity[i].v[z] = float4(freeStream(), 0.0); continue; }
         float own = pressure[i].s[z];
         float3 gradient = 0.5 * float3(
             pressureAt(p + int3(1, 0, 0), own) - pressureAt(p + int3(-1, 0, 0), own),
@@ -192,12 +218,14 @@ void project(uint3 tid: SV_DispatchThreadID) {
 // An air voxel with solid immediately downwind of it is touching a windward
 // face; its pressure is what the wind is doing to that face. The highest such
 // pressure on each object is its impact, and the highest overall sets the scale.
+int2 downwindOf(int2 p) { return p + int2(round(windDir())); }
+
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void impact(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
     int2 p = int2(tid.xy);
-    int2 downwind = p + int2(1, 0);
+    int2 downwind = downwindOf(p);
     if (!insideXY(downwind)) return;
     uint root = ownerAt(downwind);
     if (root == NONE) return;
@@ -221,7 +249,7 @@ void impact(uint3 tid: SV_DispatchThreadID) {
 void locate(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
     int2 p = int2(tid.xy);
-    int2 downwind = p + int2(1, 0);
+    int2 downwind = downwindOf(p);
     if (!insideXY(downwind)) return;
     uint root = ownerAt(downwind);
     if (root == NONE) return;
@@ -270,7 +298,8 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
     Label label;
     label.cell = float2(cell);
     label.height = heightAt(int2(cell)) + 0.03;
-    label.value = float(regions[i].peak.load()) / QUANTA / stagnation() * 100.0;
+    // The solve can overshoot ideal stagnation a little; that is numerical, not wind.
+    label.value = min(float(regions[i].peak.load()) / QUANTA / stagnation() * 100.0, 100.0);
     label.unit = UNIT_PERCENT;
     label.tag = TAG_IMPACT;
     label.line = 0;
@@ -278,11 +307,11 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
     labels[slot] = label;
 }
 
-// One thread per streamline: seeded up the left edge in a few rows of height,
-// stepped through the flow at a fixed stride. Each point carries its speed as
-// a fraction of the wind; a point with x below zero is past the end of the
-// line. Points are eased toward last frame's so the lines hold still through
-// the solve's small frame-to-frame jitter.
+// One thread per streamline: seeded along a line across the wind, upwind of
+// the whole field, in a few rows of height, then walked straight in until it
+// enters. Each point carries its speed as a fraction of the wind; a point with
+// x below zero is past the end of the line. Points are eased toward last
+// frame's so the lines hold still through the solve's small jitter.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void trace(uint3 tid: SV_DispatchThreadID) {
@@ -293,11 +322,18 @@ void trace(uint3 tid: SV_DispatchThreadID) {
 
     uint row = n / across;
     uint column = n % across;
-    float3 p = float3(
-        1.0,
-        (float(column) + 0.5) / float(across) * float(engine.size.y - 1),
-        1.5 + float(row) * 4.5);
-    bool alive = !solid(int3(round(p)));
+    float2 dir = windDir();
+    float2 centre = float2(engine.size - 1) * 0.5;
+    float reach = length(centre) + 2.0;
+    float offset = ((float(column) + 0.5) / float(across) - 0.5) * 2.0 * reach;
+    float3 p = float3(centre - dir * reach + float2(-dir.y, dir.x) * offset, 1.5 + float(row) * 4.5);
+
+    bool alive = false;
+    for (uint walk = 0; walk < 400; walk++) {
+        if (all(p.xy >= float2(0.0)) && all(p.xy <= float2(engine.size - 1))) { alive = true; break; }
+        p.xy += dir * STRIDE;
+    }
+    alive = alive && !solid(int3(round(p)));
 
     for (uint m = 0; m < STEPS; m++) {
         float3 v = fieldSmooth(velocity, p);
