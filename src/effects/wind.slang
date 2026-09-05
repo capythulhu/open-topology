@@ -263,7 +263,9 @@ float4 fragmentMain(Ribbon r) : SV_Target {
         // Where along its arrow this fragment falls, 0 at the tail, 1 at the tip,
         // sliding along the line at the wind speed. A narrow shaft, a triangular
         // head, and open air between one arrow and the next.
-        float t = frac(r.arc / spacing - engine.time * wind * 0.5 / spacing * STRIDE + r.phase);
+        // wind is cells per frame; the arrows travel the line at that rate in
+        // real time, which is about forty cells a second at the default.
+        float t = frac((r.arc - engine.time * wind * 30.0) / spacing + r.phase);
         float across = abs(r.side);
         bool shaft = t < 0.55 && across < 0.22;
         bool head = t >= 0.55 && t < 0.82 && across < (0.82 - t) / 0.27;
