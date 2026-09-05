@@ -123,6 +123,39 @@ async function main() {
   let latest: Uint8Array<ArrayBuffer> | null = null;
   const view = { heightScale: 0.9, spin: 0 };
 
+  let projector: Window | null = null;
+  let offscreen: OffscreenCanvas | null = null;
+  let offscreenContext: GPUCanvasContext | null = null;
+  let projectorDepth: GPUTexture | null = null;
+
+  const openProjector = () => {
+    if (projector && !projector.closed) {
+      projector.focus();
+      return;
+    }
+    projector = window.open('/projector.html', 'projector', 'popup,width=960,height=720');
+  };
+
+  window.addEventListener('message', (event) => {
+    if (!projector || event.source !== projector) return;
+    const data = event.data;
+    if (data?.type === 'projector-closed') {
+      projector = null;
+      offscreen = null;
+      offscreenContext = null;
+      projectorDepth?.destroy();
+      projectorDepth = null;
+      return;
+    }
+    if (data?.type === 'projector-size' && data.width > 0 && data.height > 0) {
+      offscreen = new OffscreenCanvas(data.width, data.height);
+      offscreenContext = offscreen.getContext('webgpu');
+      offscreenContext?.configure({ device, format, alphaMode: 'opaque' });
+      projectorDepth?.destroy();
+      projectorDepth = createDepth(device, data.width, data.height);
+    }
+  });
+
   const draw = () => {
     renderPanel(panel, {
       fields: Object.keys(FIELDS),
@@ -139,15 +172,17 @@ async function main() {
       },
       preview: activeSource === 'kinect' ? preview.element : null,
       notice,
-      actions:
-        activeSource !== 'kinect'
+      actions: [
+        ...(activeSource !== 'kinect'
           ? []
           : captured
             ? [
                 { label: 'recalibrate on the flat surface', onClick: calibrate },
                 { label: 'clear calibration', onClick: clearCalibration },
               ]
-            : [{ label: 'calibrate on the flat surface', onClick: calibrate }],
+            : [{ label: 'calibrate on the flat surface', onClick: calibrate }]),
+        { label: 'open projector window', onClick: openProjector },
+      ],
       groups: [
         { title: activeSource, params: sources[activeSource].params, onChange: (n, v) => sources[activeSource].setParam(n, v) },
         { title: activeEffect, params: effects[activeEffect].params, onChange: (n, v) => effects[activeEffect].setParam(n, v) },
@@ -358,6 +393,41 @@ async function main() {
     if (wantsLabels) encoder.copyBufferToBuffer(effect.labels!, 0, staging, 0, LABELS_BYTES);
 
     device.queue.submit([encoder.finish()]);
+
+    if (projector && !projector.closed && offscreen && offscreenContext && projectorDepth) {
+      const longest = Math.max(field.columns, field.rows);
+      const aspect = offscreen.width / offscreen.height;
+      values[4] = 0;
+      values[5] = Math.PI / 2;
+      values[6] = Math.min((2 * aspect) / (field.columns / longest), 2 / (field.rows / longest)) * 0.98;
+      values[7] = aspect;
+      device.queue.writeBuffer(engine, 0, engineData);
+
+      const overhead = device.createCommandEncoder();
+      const topDown = overhead.beginRenderPass({
+        colorAttachments: [
+          {
+            view: offscreenContext.getCurrentTexture().createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store',
+          },
+        ],
+        depthStencilAttachment: {
+          view: projectorDepth.createView(),
+          depthClearValue: 1,
+          depthLoadOp: 'clear',
+          depthStoreOp: 'store',
+        },
+      });
+      grid.draw(topDown, field.columns, field.rows);
+      effect.draw(topDown, field.columns, field.rows);
+      topDown.end();
+      device.queue.submit([overhead.finish()]);
+
+      const frameImage = offscreen.transferToImageBitmap();
+      projector.postMessage(frameImage, '*', [frameImage]);
+    }
 
     if (wantsLabels) {
       reading = true;
