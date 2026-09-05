@@ -411,5 +411,5 @@ float4 fragmentMain(Ribbon r) : SV_Target {
     float press = clamp(onSurface(cellOf(r.uv)) / scale, -1.0, 1.0);
     float3 tint = heat(0.5 + 0.5 * press);
     float3 dark = float3(0.09, 0.10, 0.13);
-    return float4(lerp(dark, tint * 0.75, 0.35 + 0.55 * abs(press)) * (0.5 + 0.5 * shading(r.uv)), 1.0);
+    return float4(lerp(dark, tint * 0.8, 0.12 + 0.8 * abs(press)) * (0.5 + 0.5 * shading(r.uv)), 1.0);
 }

@@ -8,6 +8,7 @@ import { createPreview } from './sources/preview';
 import * as gridModule from './grid.slang';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
+import * as bumps from './sources/bumps.slang';
 import * as kinect from './sources/kinect.slang';
 import * as contours from './effects/contours.slang';
 import * as normals from './effects/normals.slang';
@@ -31,7 +32,7 @@ const FIELDS: Record<string, { columns: number; rows: number }> = {
   '640 x 480': { columns: 640, rows: 480 },
 };
 
-const SOURCES: Record<string, SlangModule> = { noise, kinect };
+const SOURCES: Record<string, SlangModule> = { bumps, noise, kinect };
 const EFFECTS: Record<string, SlangModule> = { contours, measure, cage, tomography, wind, water, sparks, normals, raw };
 
 async function main() {
@@ -119,7 +120,7 @@ async function main() {
     draw();
   };
 
-  let activeSource = 'noise';
+  let activeSource = 'bumps';
   let activeEffect = 'contours';
   let notice = '';
   const preview = createPreview();
