@@ -15,7 +15,6 @@ import * as sparks from './effects/sparks.slang';
 import * as raw from './effects/raw.slang';
 import * as measure from './effects/measure.slang';
 import * as cage from './effects/cage.slang';
-import * as sphere from './effects/sphere.slang';
 import * as water from './effects/water.slang';
 
 const ENGINE_BYTES = 48;
@@ -31,7 +30,7 @@ const FIELDS: Record<string, { columns: number; rows: number }> = {
 };
 
 const SOURCES: Record<string, SlangModule> = { noise, kinect };
-const EFFECTS: Record<string, SlangModule> = { contours, measure, cage, sphere, water, sparks, normals, raw };
+const EFFECTS: Record<string, SlangModule> = { contours, measure, cage, water, sparks, normals, raw };
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;
