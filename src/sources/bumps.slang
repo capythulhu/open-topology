@@ -2,7 +2,8 @@
 
 // A flat floor with a few domes on it and one low ridge — the sandbox with
 // styrofoam hemispheres and a hand, roughly. They drift a little so the effects
-// have something to react to.
+// have something to react to. Two of them stand taller than the wind's ceiling
+// (0.5), so it has to go around them rather than over.
 
 RWStructuredBuffer<float> heights;
 RWStructuredBuffer<float> rawHeights;
@@ -32,9 +33,10 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 p = float2(tid.xy) / float(max(engine.size.x, engine.size.y));
     float t = engine.time * speed;
 
-    float h = dome(p, float2(0.30 + 0.04 * sin(t), 0.36), 0.12);
+    float h = 1.8 * dome(p, float2(0.30 + 0.04 * sin(t), 0.36), 0.12);
     h = max(h, 0.8 * dome(p, float2(0.63, 0.28 + 0.04 * cos(t * 1.3)), 0.085));
     h = max(h, 0.55 * dome(p, float2(0.70, 0.68), 0.15));
+    h = max(h, 2.4 * dome(p, float2(0.50, 0.55), 0.045));
     h = max(h, 0.45 * ridge(p, float2(0.18, 0.72), float2(0.44, 0.62 + 0.03 * sin(t * 0.7)), 0.05));
 
     uint i = cellIndex(tid.xy);

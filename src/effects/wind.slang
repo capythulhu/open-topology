@@ -13,6 +13,7 @@
 [Param(1.4, 0.2, 4.0)]    uniform float wind;
 [Param(16.0, 6.0, 40.0)]  uniform float lines;
 [Param(34.0, 12.0, 80.0)] uniform float spacing;
+[Param(3.0, 0.5, 8.0)]    uniform float contrast;
 
 static const uint LAYERS = 16;
 static const float THICK = 0.5 / float(LAYERS);
@@ -401,15 +402,22 @@ float4 fragmentMain(Ribbon r) : SV_Target {
         bool head = t >= 0.5 && t < 0.78 && across < (0.78 - t) / 0.28;
         if (!shaft && !head) discard;
 
-        // The free stream sits mid-palette; faster is hotter, slower cooler.
-        return float4(heat(r.push * 0.5), 1.0);
+        // The free stream sits mid-palette. The flow rarely strays more than a
+        // fifth either side of it, so that fifth is stretched across the whole
+        // palette or every arrow comes out green.
+        return float4(heat(0.5 + (r.push - 1.0) * contrast * 0.5), 1.0);
     }
 
-    // The ground wears its pressure: red where the wind presses on it, blue in
-    // the suction behind, scaled to the strongest impact in frame.
-    float scale = max(asfloat(gauge[1].load()), 1e-4);
-    float press = clamp(onSurface(cellOf(r.uv)) / scale, -1.0, 1.0);
-    float3 tint = heat(0.5 + 0.5 * press);
+    // The floor stays dark. The objects wear their pressure: red where the wind
+    // presses on them, blue in the suction behind, scaled to the strongest
+    // impact in frame.
+    int2 p = cellOf(r.uv);
+    float shade = 0.5 + 0.5 * shading(r.uv);
     float3 dark = float3(0.09, 0.10, 0.13);
-    return float4(lerp(dark, tint * 0.8, 0.12 + 0.8 * abs(press)) * (0.5 + 0.5 * shading(r.uv)), 1.0);
+    if (ownerAt(p) == NONE) return float4(dark * shade, 1.0);
+
+    float scale = max(asfloat(gauge[1].load()), 1e-4);
+    float press = clamp(onSurface(p) / scale, -1.0, 1.0);
+    float3 tint = heat(0.5 + 0.5 * press);
+    return float4(lerp(float3(0.24, 0.25, 0.28), tint * 0.85, abs(press)) * shade, 1.0);
 }
