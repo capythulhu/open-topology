@@ -6,7 +6,8 @@
 // Each object in an oriented bounding box drawn as glowing edges, with a sparse
 // wireframe of the object itself inside and nothing else. The box follows the
 // object's principal axes, so a hand gets a long box along it and a hemisphere
-// a square, and its dimensions are lettered at the top.
+// a square, and its dimensions are lettered at the top. White lines join every
+// pair of boxes at their tops.
 
 [Param(80.0, 4.0, 3000.0)] uniform float minCells;
 [Param(6.0, 2.0, 24.0)]    uniform float wire;
@@ -14,6 +15,8 @@
 static const float QUANTA = 4096.0;
 static const float FINE = 16.0;
 static const uint MAX_BOXES = 16;
+static const uint EDGE_VERTICES = MAX_BOXES * 12 * 6;
+static const uint LINK_VERTICES = (MAX_BOXES * (MAX_BOXES - 1) / 2) * 6;
 
 struct Region {
     Atomic<uint> count;
@@ -196,9 +199,21 @@ float3 cornerWorld(Box box, uint corner) {
     return pointWorld(cell, h);
 }
 
+// A ribbon between two projected points: one width whichever way the camera
+// looks, pulled toward the camera a little so it is not fought over by a
+// surface it lies on.
+float4 ribbon(float3 a, float3 b, float2 corner, float width) {
+    float4 from = project(a);
+    float4 to = project(b);
+    float2 dir = normalize((to.xy - from.xy) * float2(engine.aspect, 1.0) + 1e-6);
+    float2 side = float2(-dir.y, dir.x) * width * float2(1.0 / engine.aspect, 1.0);
+    float4 base = corner.x < 0.0 ? from : to;
+    return float4(base.xy + side * corner.y, base.z - 0.002, 1.0);
+}
+
 [shader("vertex")]
 [PerCell(6)]
-[Vertices(1152)]
+[Vertices(1872)]
 Wire vertexMain(uint vid: SV_VertexID) {
     Wire o;
     o.uv = float2(0.0);
@@ -218,30 +233,51 @@ Wire vertexMain(uint vid: SV_VertexID) {
         return o;
     }
 
-    // Box edges as screen-space ribbons between two projected corners, so they
-    // stay one width whichever way the camera looks at them.
     uint e = vid - cells * 6;
-    Box box = cages[e / 72];
-    if (box.shown < 0.5) {
+    float2 corner = CORNERS[e % 6];
+
+    if (e < EDGE_VERTICES) {
+        Box box = cages[e / 72];
+        if (box.shown < 0.5) {
+            o.clip = CULLED;
+            return o;
+        }
+        uint2 ends = EDGES[(e / 6) % 12];
+        o.clip = ribbon(cornerWorld(box, ends.x), cornerWorld(box, ends.y), corner, 0.0032);
+        o.edge = 1.0;
+        return o;
+    }
+
+    // One link per pair of boxes, top centre to top centre. The pair is found
+    // by counting; at sixteen boxes that is a hundred and twenty, which is nothing.
+    uint wanted = (e - EDGE_VERTICES) / 6;
+    uint pair = 0;
+    uint first = 0;
+    uint second = 0;
+    for (uint a = 0; a < MAX_BOXES; a++) {
+        for (uint b = a + 1; b < MAX_BOXES; b++) {
+            if (pair == wanted) {
+                first = a;
+                second = b;
+            }
+            pair++;
+        }
+    }
+
+    Box from = cages[first];
+    Box to = cages[second];
+    if (from.shown < 0.5 || to.shown < 0.5) {
         o.clip = CULLED;
         return o;
     }
-    uint2 ends = EDGES[(e / 6) % 12];
-    float2 corner = CORNERS[e % 6];
-
-    float4 from = project(cornerWorld(box, ends.x));
-    float4 to = project(cornerWorld(box, ends.y));
-    float2 dir = normalize((to.xy - from.xy) * float2(engine.aspect, 1.0) + 1e-6);
-    float2 side = float2(-dir.y, dir.x) * 0.0032 * float2(1.0 / engine.aspect, 1.0);
-
-    float4 base = corner.x < 0.0 ? from : to;
-    o.clip = float4(base.xy + side * corner.y, base.z - 0.002, 1.0);
-    o.edge = 1.0;
+    o.clip = ribbon(pointWorld(from.centre, from.height), pointWorld(to.centre, to.height), corner, 0.0016);
+    o.edge = 2.0;
     return o;
 }
 
 [shader("fragment")]
 float4 fragmentMain(Wire w) : SV_Target {
+    if (w.edge > 1.5) return float4(1.0, 1.0, 1.0, 1.0);
     if (w.edge > 0.5) return float4(0.85, 0.97, 1.0, 1.0);
 
     int2 p = cellOf(w.uv);
