@@ -65,6 +65,6 @@ Only one reader can hold the device at a time, so a second dev server or a stray
 
 ## Status
 
-Early, but it runs. Live Kinect depth or animated noise, in 3D, with seven effects — including a shallow-water simulation, one that measures each object in mm, cm², and mL, and one that boxes each object and reports its dimensions. Projector output is not built yet.
+Early, but it runs. Live Kinect depth or animated noise, in 3D, with nine effects — including a shallow-water simulation, a wind tunnel, one that measures each object in mm, cm², and mL, and one that boxes each object and reports its dimensions. Projector output is not built yet.
 
 MIT.
