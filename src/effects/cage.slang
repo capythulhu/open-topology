@@ -6,17 +6,35 @@
 // Each object in an oriented bounding box drawn as glowing edges, with a sparse
 // wireframe of the object itself inside and nothing else. The box follows the
 // object's principal axes, so a hand gets a long box along it and a hemisphere
-// a square, and its dimensions are lettered at the top. White lines join every
-// pair of boxes at their tops.
+// a square; its footprint and orientation are lettered at the top. White lines
+// join every pair of boxes, each carrying the distance between them.
 
 [Param(80.0, 4.0, 3000.0)] uniform float minCells;
 [Param(6.0, 2.0, 24.0)]    uniform float wire;
 
 static const float QUANTA = 4096.0;
 static const float FINE = 16.0;
-static const uint MAX_BOXES = 16;
+// Eight boxes at three labels each, plus one label per link, fits MAX_LABELS.
+static const uint MAX_BOXES = 8;
+static const uint MAX_LINKS = MAX_BOXES * (MAX_BOXES - 1) / 2;
 static const uint EDGE_VERTICES = MAX_BOXES * 12 * 6;
-static const uint LINK_VERTICES = (MAX_BOXES * (MAX_BOXES - 1) / 2) * 6;
+static const uint LINK_VERTICES = MAX_LINKS * 6;
+
+// The k-th pair of boxes, counted a < b. Twenty-eight of them at most.
+void pairOf(uint k, out uint first, out uint second) {
+    uint pair = 0;
+    first = 0;
+    second = 0;
+    for (uint a = 0; a < MAX_BOXES; a++) {
+        for (uint b = a + 1; b < MAX_BOXES; b++) {
+            if (pair == k) {
+                first = a;
+                second = b;
+            }
+            pair++;
+        }
+    }
+}
 
 struct Region {
     Atomic<uint> count;
@@ -166,13 +184,40 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
     label.shown = 1;
 
     label.tag = TAG_L; label.unit = UNIT_MM; label.value = half.x * 2.0 * engine.cellMm; label.line = 0;
-    labels[slot * 4] = label;
+    labels[slot * 3] = label;
     label.tag = TAG_W; label.value = half.y * 2.0 * engine.cellMm; label.line = 1;
-    labels[slot * 4 + 1] = label;
-    label.tag = TAG_H; label.value = peak * engine.heightMm; label.line = 2;
-    labels[slot * 4 + 2] = label;
-    label.tag = TAG_NONE; label.unit = UNIT_DEG; label.value = angle; label.line = 3;
-    labels[slot * 4 + 3] = label;
+    labels[slot * 3 + 1] = label;
+    label.tag = TAG_NONE; label.unit = UNIT_DEG; label.value = angle; label.line = 2;
+    labels[slot * 3 + 2] = label;
+}
+
+// One thread per pair: the straight-line distance between two box tops, in the
+// world, lettered at the midpoint of the link.
+[shader("compute")]
+[numthreads(8, 8, 1)]
+void link(uint3 tid: SV_DispatchThreadID) {
+    if (any(tid.xy >= engine.size)) return;
+    uint k = cellIndex(tid.xy);
+    if (k >= MAX_LINKS) return;
+
+    uint first, second;
+    pairOf(k, first, second);
+    Box from = boxes[first];
+    Box to = boxes[second];
+    if (from.shown < 0.5 || to.shown < 0.5) return;
+
+    float2 across = (to.centre - from.centre) * engine.cellMm;
+    float up = (to.height - from.height) * engine.heightMm;
+
+    Label label;
+    label.cell = (from.centre + to.centre) * 0.5;
+    label.height = (from.height + to.height) * 0.5;
+    label.value = sqrt(dot(across, across) + up * up);
+    label.unit = UNIT_MM;
+    label.tag = TAG_NONE;
+    label.line = 0;
+    label.shown = 1;
+    labels[MAX_BOXES * 3 + k] = label;
 }
 
 struct Wire {
@@ -213,7 +258,7 @@ float4 ribbon(float3 a, float3 b, float2 corner, float width) {
 
 [shader("vertex")]
 [PerCell(6)]
-[Vertices(1872)]
+[Vertices(744)]
 Wire vertexMain(uint vid: SV_VertexID) {
     Wire o;
     o.uv = float2(0.0);
@@ -248,22 +293,8 @@ Wire vertexMain(uint vid: SV_VertexID) {
         return o;
     }
 
-    // One link per pair of boxes, top centre to top centre. The pair is found
-    // by counting; at sixteen boxes that is a hundred and twenty, which is nothing.
-    uint wanted = (e - EDGE_VERTICES) / 6;
-    uint pair = 0;
-    uint first = 0;
-    uint second = 0;
-    for (uint a = 0; a < MAX_BOXES; a++) {
-        for (uint b = a + 1; b < MAX_BOXES; b++) {
-            if (pair == wanted) {
-                first = a;
-                second = b;
-            }
-            pair++;
-        }
-    }
-
+    uint first, second;
+    pairOf((e - EDGE_VERTICES) / 6, first, second);
     Box from = cages[first];
     Box to = cages[second];
     if (from.shown < 0.5 || to.shown < 0.5) {
