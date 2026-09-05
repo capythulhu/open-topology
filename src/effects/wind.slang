@@ -30,7 +30,9 @@ struct Scalars { float s[LAYERS]; }
 
 struct Region {
     Atomic<uint> peak;
-    Atomic<uint> where;
+    Atomic<uint> weight;
+    Atomic<uint> sumX;
+    Atomic<uint> sumY;
 }
 
 RWStructuredBuffer<Column> velocity;
@@ -131,7 +133,9 @@ void reset(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
     uint i = cellIndex(tid.xy);
     regions[i].peak.store(0);
-    regions[i].where.store(NONE);
+    regions[i].weight.store(0);
+    regions[i].sumX.store(0);
+    regions[i].sumY.store(0);
     if (i < MAX_LABELS) labels[i].shown = 0;
     if (i == 0) gauge[0].store(0);
 }
@@ -217,8 +221,12 @@ void project(uint3 tid: SV_DispatchThreadID) {
 
 // An air voxel with solid immediately downwind of it is touching a windward
 // face; its pressure is what the wind is doing to that face. The highest such
-// pressure on each object is its impact, and the highest overall sets the scale.
+// pressure on each object is its impact and the highest overall sets the scale.
+// The label sits at the pressure-weighted centre of the face — a single peak
+// cell hops about on a smooth face from frame to frame, a centre does not.
 int2 downwindOf(int2 p) { return p + int2(round(windDir())); }
+
+static const float WEIGHT = 64.0;
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
@@ -241,29 +249,11 @@ void impact(uint3 tid: SV_DispatchThreadID) {
     uint quantised = uint(strongest * QUANTA);
     regions[root].peak.max(quantised);
     gauge[0].max(quantised);
-}
 
-// The cell that produced each region's peak, found by matching.
-[shader("compute")]
-[numthreads(8, 8, 1)]
-void locate(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    int2 p = int2(tid.xy);
-    int2 downwind = downwindOf(p);
-    if (!insideXY(downwind)) return;
-    uint root = ownerAt(downwind);
-    if (root == NONE) return;
-    uint peak = regions[root].peak.load();
-    if (peak == 0) return;
-
-    for (int z = 0; z < int(LAYERS); z++) {
-        int3 here = int3(p, z);
-        if (solid(here) || !solid(int3(downwind, z))) continue;
-        if (uint(pushAt(here) * QUANTA) == peak) {
-            regions[root].where.min(cellIndex(tid.xy));
-            return;
-        }
-    }
+    uint w = uint(strongest * WEIGHT) + 1;
+    regions[root].weight.add(w);
+    regions[root].sumX.add(w * tid.x);
+    regions[root].sumY.add(w * tid.y);
 }
 
 // The palette scale follows the strongest impact in frame, eased so it does
@@ -283,8 +273,8 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
     uint i = cellIndex(tid.xy);
     if (owner[i].load() != i) return;
-    uint where = regions[i].where.load();
-    if (where == NONE) return;
+    uint weight = regions[i].weight.load();
+    if (weight == 0) return;
 
     // Slot by root order is not stable, so labels are claimed by hashing the
     // root into the table and walking forward — good enough for a handful.
@@ -294,10 +284,10 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
         if (labels[candidate].shown == 0) { slot = candidate; break; }
     }
 
-    uint2 cell = uint2(where % engine.size.x, where / engine.size.x);
+    float2 cell = float2(regions[i].sumX.load(), regions[i].sumY.load()) / float(weight);
     Label label;
-    label.cell = float2(cell);
-    label.height = heightAt(int2(cell)) + 0.03;
+    label.cell = cell;
+    label.height = heightAt(int2(round(cell))) + 0.03;
     // The solve can overshoot ideal stagnation a little; that is numerical, not wind.
     label.value = min(float(regions[i].peak.load()) / QUANTA / stagnation() * 100.0, 100.0);
     label.unit = UNIT_PERCENT;

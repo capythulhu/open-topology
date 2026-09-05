@@ -52,7 +52,7 @@ export function createStabilizer() {
 
     for (const label of incoming) {
       let best = -1;
-      let nearest = 16;
+      let nearest = 40;
       tracked.forEach((t, i) => {
         if (claimed.has(i) || t.unit !== label.unit || t.tag !== label.tag || t.line !== label.line) return;
         const d = Math.hypot(t.cell[0] - label.cell[0], t.cell[1] - label.cell[1]);
@@ -75,8 +75,15 @@ export function createStabilizer() {
       next.push(t);
     }
 
+    // A held label that a live one has moved next to is the same label seen
+    // twice; the live one wins.
     tracked.forEach((t, i) => {
-      if (!claimed.has(i) && ++t.missing < 20) next.push(t);
+      if (claimed.has(i) || ++t.missing >= 20) return;
+      const twin = next.some(
+        (n) => n.missing === 0 && n.unit === t.unit && n.tag === t.tag && n.line === t.line &&
+          Math.hypot(n.cell[0] - t.cell[0], n.cell[1] - t.cell[1]) < 40,
+      );
+      if (!twin) next.push(t);
     });
     tracked = next;
     return tracked;
