@@ -3,24 +3,16 @@
 #include "../lib/color.slang"
 #include "../lib/labels.slang"
 
-// Each object in an oriented bounding box drawn as glowing edges, with a sparse
-// wireframe of the object itself inside and nothing else. The box follows the
-// object's principal axes, so a hand gets a long box along it and a hemisphere
-// a square; its footprint and orientation are lettered at the top. White lines
-// join every pair of boxes, each carrying the distance between them.
-
 [Param(80.0, 4.0, 3000.0)] uniform float minCells;
 [Param(6.0, 2.0, 24.0)]    uniform float wire;
 
 static const float QUANTA = 4096.0;
 static const float FINE = 16.0;
-// Eight boxes at three labels each, plus one label per link, fits MAX_LABELS.
 static const uint MAX_BOXES = 8;
 static const uint MAX_LINKS = MAX_BOXES * (MAX_BOXES - 1) / 2;
 static const uint EDGE_VERTICES = MAX_BOXES * 12 * 6;
 static const uint LINK_VERTICES = MAX_LINKS * 6;
 
-// The k-th pair of boxes, counted a < b. Twenty-eight of them at most.
 void pairOf(uint k, out uint first, out uint second) {
     uint pair = 0;
     first = 0;
@@ -103,8 +95,6 @@ void centroid(uint3 tid: SV_DispatchThreadID) {
     regions[root].peak.max(uint(max(heightAt(int2(tid.xy)), 0.0) * QUANTA));
 }
 
-// Second moments about the centroid. Centred so they fit in 32 bits, and
-// quartered for the same reason.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void spread(uint3 tid: SV_DispatchThreadID) {
@@ -117,8 +107,6 @@ void spread(uint3 tid: SV_DispatchThreadID) {
     regions[root].xy.add(int(d.x * d.y * 0.25));
 }
 
-// The principal axis of a 2x2 covariance has a closed form; one thread per
-// region, at its root.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void orient(uint3 tid: SV_DispatchThreadID) {
@@ -191,8 +179,6 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
     labels[slot * 3 + 2] = label;
 }
 
-// One thread per pair: the straight-line distance between two box tops, in the
-// world, lettered at the midpoint of the link.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void link(uint3 tid: SV_DispatchThreadID) {
@@ -229,7 +215,6 @@ struct Wire {
 static const uint2 QUAD[6] = { uint2(0, 0), uint2(1, 0), uint2(0, 1), uint2(1, 0), uint2(1, 1), uint2(0, 1) };
 static const float2 CORNERS[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, -1), float2(1, 1), float2(-1, 1) };
 
-// Corner bits: 1 = far end of the axis, 2 = far side across it, 4 = top.
 static const uint2 EDGES[12] = {
     uint2(0, 1), uint2(1, 3), uint2(3, 2), uint2(2, 0),
     uint2(4, 5), uint2(5, 7), uint2(7, 6), uint2(6, 4),
@@ -244,9 +229,6 @@ float3 cornerWorld(Box box, uint corner) {
     return pointWorld(cell, h);
 }
 
-// A ribbon between two projected points: one width whichever way the camera
-// looks, pulled toward the camera a little so it is not fought over by a
-// surface it lies on.
 float4 ribbon(float3 a, float3 b, float2 corner, float width) {
     float4 from = project(a);
     float4 to = project(b);
@@ -315,8 +297,6 @@ float4 fragmentMain(Wire w) : SV_Target {
     uint root = ownerAt(p);
     if (root == NONE) return float4(0.07, 0.08, 0.10, 1.0);
 
-    // Only the wires of the object survive; everything between them is cut
-    // away so the box behind shows through.
     float2 g = w.uv * float2(engine.size - 1);
     uint every = uint(max(wire, 2.0));
     bool onX = (uint(g.x) % every) == 0u && frac(g.x) < 0.35;

@@ -9,8 +9,6 @@ export type Placed = {
   tag: number;
 };
 
-// Mirrors lib/labels.slang: 32 bytes, float2 cell, float height, float value,
-// then unit, line, shown, tag as uints.
 const STRIDE = 32;
 const UNITS = ['', 'mm', 'cm²', 'mL', 'mm/s', '°', '', '%'];
 const DECIMALS = [2, 0, 0, 0, 0, 0, 0, 0];
@@ -37,11 +35,6 @@ export function parseLabels(bytes: ArrayBuffer): Placed[] {
   return out;
 }
 
-// Labels are recomputed from scratch every frame, so anything jittery upstream
-// — a sensor edge, an impact point hopping along a face — makes them jump and
-// blink. Each incoming label is matched to the nearest one shown last frame
-// with the same meaning and eased toward it, and a label that vanishes is held
-// briefly rather than dropped, so a momentary dropout is not a blink.
 export function createStabilizer() {
   type Tracked = Placed & { missing: number };
   let tracked: Tracked[] = [];
@@ -75,8 +68,6 @@ export function createStabilizer() {
       next.push(t);
     }
 
-    // A held label that a live one has moved next to is the same label seen
-    // twice; the live one wins.
     tracked.forEach((t, i) => {
       if (claimed.has(i) || ++t.missing >= 20) return;
       const twin = next.some(
@@ -105,9 +96,6 @@ export function drawLabels(
   context.textBaseline = 'middle';
   context.lineJoin = 'round';
 
-  // Labels sharing an anchor form one block. Blocks that would overprint an
-  // earlier one are pushed down until they clear it, so two objects sitting
-  // close together stay legible.
   type Block = { anchor: { x: number; y: number }; x: number; y: number; w: number; h: number; lines: { text: string; line: number }[] };
   const blocks: Block[] = [];
   for (const label of labels) {
@@ -143,7 +131,6 @@ export function drawLabels(
     context.arc(dot.x * scale, dot.y * scale, 2.5 * scale, 0, Math.PI * 2);
     context.fill();
 
-    // A leader from the dot when the block has been pushed away from it.
     if (block.y - (dot.y - 10) > lineHeight) {
       context.strokeStyle = 'rgba(255, 255, 255, 0.5)';
       context.lineWidth = 1 * scale;

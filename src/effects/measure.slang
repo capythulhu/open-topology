@@ -3,13 +3,8 @@
 #include "../lib/color.slang"
 #include "../lib/labels.slang"
 
-// Finds every raised object and measures it: peak height, footprint, and
-// volume, in millimetres, cm², and mL, lettered beside each one. The finding
-// is components.slang; this file is the accounting.
-
 [Param(80.0, 4.0, 3000.0)]  uniform float minCells;
 
-// Heights are summed as integers in these units so the atomics can do it.
 static const float QUANTA = 4096.0;
 
 struct Region {
@@ -54,8 +49,6 @@ void tally(uint3 tid: SV_DispatchThreadID) {
     regions[root].sumY.add(tid.y);
 }
 
-// One thread per region — the root cell — claims three label slots and fills
-// them, so however many objects there are, only the first MAX_LABELS / 3 letter.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void annotate(uint3 tid: SV_DispatchThreadID) {
@@ -99,11 +92,9 @@ float4 fragmentMain(Varying v) : SV_Target {
     int2 p = cellOf(v.uv);
     float shade = shading(v.uv);
 
-    // Whatever is not an object is background, and stays out of the way.
     uint root = ownerAt(p);
     if (root == NONE) return float4(float3(0.11, 0.12, 0.15) * (0.6 + 0.4 * shade), 1.0);
 
-    // Each object tinted by where it sits, so neighbours read as different things.
     uint count = max(regions[root].count.load(), 1u);
     float2 centre = float2(regions[root].sumX.load(), regions[root].sumY.load()) / float(count);
     float3 tint = placeColor(centre / float2(engine.size), 0.55);

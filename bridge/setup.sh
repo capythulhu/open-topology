@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Installs libfreenect and builds the depth reader. Safe to re-run.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

@@ -1,10 +1,5 @@
 #include "../lib/field.slang"
 
-// A flat floor with a few domes on it and one low ridge — the sandbox with
-// styrofoam hemispheres and a hand, roughly. They drift a little so the effects
-// have something to react to. Two of them stand taller than the wind's ceiling
-// (0.5), so it has to go around them rather than over.
-
 RWStructuredBuffer<float> heights;
 RWStructuredBuffer<float> rawHeights;
 
@@ -29,7 +24,6 @@ float ridge(float2 p, float2 from, float2 to, float radius) {
 void generate(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
 
-    // Square units whatever the field's aspect, so a dome stays round.
     float2 p = float2(tid.xy) / float(max(engine.size.x, engine.size.y));
     float t = engine.time * speed;
 

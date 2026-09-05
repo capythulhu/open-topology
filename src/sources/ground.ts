@@ -7,13 +7,8 @@ export type Crop = { x: number; y: number; size: number };
 const WIDTH = 640;
 const HEIGHT = 480;
 
-// Anything this far from the surface is background — a wall, or the floor beyond
-// the box — not something standing on it, and must not set the vertical scale.
 const BACKGROUND_MM = 1000;
 
-// The range never closes below this. Measured temporal noise on a static scene
-// is 5mm median and 17mm at the 97th percentile, so a range anywhere near that
-// hands the whole palette to noise the moment the surface is genuinely flat.
 const QUIETEST_MM = 80;
 
 function solve(points: Float64Array, count: number): Ground | null {
@@ -40,12 +35,6 @@ function medianAbs(values: Float64Array, count: number): number {
   return sorted[count >> 1] || 1;
 }
 
-/**
- * Fits the plane that best explains the frame and measures how far the surface
- * departs from it. Height is then read against that plane rather than against
- * the camera, so a tilted sensor cancels out instead of spending the whole
- * palette on its own tilt.
- */
 export function fitGround(samples: Uint16Array, crop: Crop): { ground: Ground | null; coverage: number } {
   const cx = crop.x * WIDTH;
   const cy = crop.y * HEIGHT;
@@ -80,8 +69,6 @@ export function fitGround(samples: Uint16Array, crop: Crop): { ground: Ground | 
   let plane = solve(points, count);
   if (!plane) return { ground: null, coverage };
 
-  // One least-squares pass is dragged well off the surface by background, so
-  // refit against whatever is still near the plane it just found.
   const inliers = new Float64Array(points.length);
   for (let pass = 0; pass < 3; pass++) {
     measure(plane);
@@ -110,11 +97,6 @@ export function fitGround(samples: Uint16Array, crop: Crop): { ground: Ground | 
   return { ground: plane, coverage };
 }
 
-/**
- * How far the frame departs from a captured reference. Same vertical scale as the
- * plane fit, but the baseline is per pixel, so lens distortion and fixed-pattern
- * depth error cancel along with the tilt.
- */
 export function spreadAgainst(samples: Uint16Array, reference: Uint16Array, crop: Crop): Reading {
   const cx = crop.x * WIDTH;
   const cy = crop.y * HEIGHT;

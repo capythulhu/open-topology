@@ -3,10 +3,6 @@
 static const uint DEPTH_WIDTH = 640;
 static const uint DEPTH_HEIGHT = 480;
 
-// The surface heights are measured against. Either a plane fitted to the frame,
-// which needs no setup, or a captured reference frame, which also cancels the
-// per-pixel error a plane cannot: lens distortion, fixed-pattern depth bias, and
-// the box's own unevenness.
 struct Ground { float a; float b; float c; float spread; float captured; }
 
 RWStructuredBuffer<float> heights;
@@ -27,16 +23,12 @@ uint indexOf(int2 p) {
     return uint(q.y) * DEPTH_WIDTH + uint(q.x);
 }
 
-// Frames arrive as little-endian uint16 millimetres, two samples per word.
 uint millimetres(StructuredBuffer<uint> frame, int2 p) {
     uint i = indexOf(p);
     uint packed = frame[i >> 1];
     return (i & 1u) == 0u ? (packed & 0xFFFFu) : (packed >> 16);
 }
 
-// Single pixels flicker between a surface and whatever is behind it, and once a
-// baseline is subtracted that flicker is the only signal left, so it spikes to
-// full scale. A median throws it away where an average would smear it around.
 float median3x3(StructuredBuffer<uint> frame, int2 p) {
     float window[9];
     int found = 0;
@@ -61,9 +53,6 @@ float median3x3(StructuredBuffer<uint> frame, int2 p) {
     return window[found / 2];
 }
 
-// The IR emitter sits beside the camera, so steep slopes and box walls leave
-// holes that read as zero. Widen the search, and report 0 if nothing resolves —
-// shiny surfaces reflect the pattern away entirely and never will.
 float filled(StructuredBuffer<uint> frame, int2 p) {
     float here = median3x3(frame, p);
     if (here != 0.0) return here;
@@ -90,9 +79,6 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 uv = (float2(tid.xy) + 0.5) / float2(engine.size);
     float2 center = float2(cropX * float(DEPTH_WIDTH), cropY * float(DEPTH_HEIGHT));
 
-    // The window read from the sensor has to have the field's own aspect ratio,
-    // or a 4:3 field stretches a square patch of depth and everything comes out
-    // wider than it is.
     float window = cropSize * float(DEPTH_HEIGHT);
     float2 span = float2(window * float(engine.size.x) / float(engine.size.y), window);
     int2 p = int2(center + (uv - 0.5) * span);
@@ -100,8 +86,6 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float live = filled(depth, p);
     if (live == 0.0) return;
 
-    // Height is distance from the ground, not from the camera. A tilted sensor
-    // spreads raw depth across a metre and swamps everything on the surface.
     float base;
     if (ground.captured > 0.5) {
         base = filled(reference, p);
@@ -110,14 +94,6 @@ void generate(uint3 tid: SV_DispatchThreadID) {
         base = ground.a * float(p.x) + ground.b * float(p.y) + ground.c;
     }
 
-    // Subtracting the deadzone from the magnitude rather than zeroing everything
-    // below it keeps the surface continuous: a hard cutoff leaves a visible step
-    // wherever the ground happens to cross the threshold.
-    // spread sets where the palette tops out, not where the geometry does. It is a
-    // high percentile of the deviations, so an object that is a small part of the
-    // view — a hand — would otherwise have its top sheared flat at that line.
-    // Raised things get headroom past it; sunk things stay bound, since what lies
-    // far below the plane is nearly always background, not a hole in the sand.
     float deviation = base - live;
     float beyond = max(abs(deviation) - deadzone, 0.0);
     float target = clamp(sign(deviation) * beyond / max(ground.spread, 1.0), -1.0, 2.5) * 0.5 * height;

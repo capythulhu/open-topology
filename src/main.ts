@@ -23,8 +23,6 @@ import * as water from './effects/water.slang';
 const ENGINE_BYTES = 48;
 const DEPTH_BYTES = 640 * 480 * 2;
 
-// The plane takes the aspect ratio of its resolution, so a 4:3 field matches what
-// the sensor actually sees instead of cropping it to a square.
 const FIELDS: Record<string, { columns: number; rows: number }> = {
   '256 x 256': { columns: 256, rows: 256 },
   '320 x 240': { columns: 320, rows: 240 },
@@ -42,7 +40,6 @@ async function main() {
   const panel = document.querySelector<HTMLElement>('#panel')!;
   const { device, context, format } = await initGpu(canvas);
   const camera = createCamera(canvas);
-  // A rejected command buffer is otherwise just a black frame with no clue why.
   device.addEventListener('uncapturederror', (event) => {
     console.error('[gpu]', (event as GPUUncapturedErrorEvent).error.message);
   });
@@ -56,8 +53,6 @@ async function main() {
     size: DEPTH_BYTES,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
-  // Labels come back from the GPU through here, one frame behind, which nobody
-  // can see.
   const staging = device.createBuffer({
     size: LABELS_BYTES,
     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
@@ -96,8 +91,6 @@ async function main() {
   let effects = build(EFFECTS);
   let grid = build({ grid: gridModule }).grid;
 
-  // Changing resolution means new buffers and new bind groups, so the programs
-  // are rebuilt; carrying the slider values across keeps that invisible.
   const setField = (name: string) => {
     const settings = [...Object.values(sources), ...Object.values(effects), grid].map((program) =>
       program.params.map((p) => [p.name, p.value] as const),
@@ -174,8 +167,6 @@ async function main() {
     });
   };
 
-  // Height is read against the plane that best fits the frame, refitted as it
-  // changes, so nothing needs calibrating and a tilted sensor cancels out.
   const groundData = new Float32Array(8);
   const ground = { a: 0, b: 0, c: 0, spread: 0 };
   let captured: Uint16Array | null = null;
@@ -191,8 +182,6 @@ async function main() {
     const coverage = reading.coverage;
     const fitted = 'ground' in reading ? reading.ground : { a: 0, b: 0, c: 0, spread: reading.spread };
 
-    // Anything nearer than about half a metre returns nothing at all on a v1, so
-    // thin coverage almost always means the sensor is mounted too close.
     const complaint =
       coverage < 0.25
         ? `sensor is reading only ${Math.round(coverage * 100)}% of the view — a kinect v1 sees nothing closer than ~50cm, try mounting it further back`
@@ -219,8 +208,6 @@ async function main() {
     device.queue.writeBuffer(groundBuffer, 0, groundData);
   };
 
-  // Optional: the plane fit already works untouched. Capturing an empty, flat
-  // surface additionally cancels whatever the sensor gets wrong pixel by pixel.
   const calibrate = () => {
     if (!latest) return;
     captured = new Uint16Array(latest.slice().buffer);
@@ -242,8 +229,6 @@ async function main() {
     activeSource = name;
     notice = '';
 
-    // Otherwise cells the new source never writes — sensor holes, mostly — keep
-    // showing the old source's terrain.
     const blank = new Float32Array(field.columns * field.rows);
     device.queue.writeBuffer(heights, 0, blank);
     device.queue.writeBuffer(rawHeights, 0, blank);
@@ -257,8 +242,6 @@ async function main() {
       return;
     }
 
-    // A wedged sensor is reset over usb before it streams, which takes a good
-    // fifteen seconds — say so rather than look hung.
     notice = 'waiting for the kinect...';
     draw();
 
@@ -269,8 +252,6 @@ async function main() {
         device.queue.writeBuffer(depth, 0, frame);
         measure(frame);
 
-        // A few times a second is plenty for a thumbnail, and it keeps the cost
-        // of redrawing it off the frame budget.
         if (shown++ % 6 === 0) {
           const value = (name: string) => sources.kinect.params.find((p) => p.name === name)?.value ?? 0.5;
           preview.draw(frame, {
@@ -298,7 +279,6 @@ async function main() {
   const sizes = new Uint32Array(engineData);
   const values = new Float32Array(engineData);
 
-
   let depthTexture = createDepth(device, 1, 1);
   let width = 0;
   let height = 0;
@@ -323,8 +303,6 @@ async function main() {
   const frame = () => {
     resize();
 
-    // Turntable: yaw advances by spin radians per second, on top of whatever
-    // dragging has done, so the two compose rather than fight.
     const now = performance.now();
     camera.yaw += view.spin * (now - previous) / 1000;
     previous = now;
@@ -337,17 +315,12 @@ async function main() {
     values[5] = camera.pitch;
     values[6] = camera.zoom;
     values[7] = width / height;
-    // Exaggerating the relief compresses what a unit of height is worth in mm,
-    // which keeps a contour interval honest.
     const param = (name: string) => sources[activeSource].params.find((p) => p.name === name)?.value;
     values[8] =
       activeSource === 'kinect'
         ? Math.max(1, (2 * ground.spread) / Math.max(param('height') ?? 1, 0.01))
         : (param('relief') ?? 200);
 
-    // Width of one cell in the world. A kinect v1 pixel covers about 1.7mm per
-    // metre of distance (57° across 640 pixels); the noise field has no physical
-    // size, so it is nominally 400mm wide.
     values[9] =
       activeSource === 'kinect'
         ? ((param('cropSize') ?? 0.9) * 480 / field.rows) * sceneDepth * 0.001697
@@ -401,8 +374,6 @@ async function main() {
     requestAnimationFrame(frame);
   };
 
-  // The same placement and camera as surface.slang, so a label lands on the
-  // cell it describes.
   const projectCell = (cell: [number, number], h: number) => {
     const longest = Math.max(field.columns, field.rows);
     const wx = (cell[0] / (field.columns - 1) - 0.5) * (field.columns / longest);

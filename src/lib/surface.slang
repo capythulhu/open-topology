@@ -5,22 +5,16 @@
 
 StructuredBuffer<float> heights;
 
-// The same field before the source's temporal smoothing. Effects that need to
-// follow fast movement without a fading trail read this instead of heights.
 StructuredBuffer<float> rawHeights;
 
 float heightAt(int2 p) { int2 q = clampCell(p); return heights[q.y * int(engine.size.x) + q.x]; }
 
 float rawHeightAt(int2 p) { int2 q = clampCell(p); return rawHeights[q.y * int(engine.size.x) + q.x]; }
 
-// The field keeps the aspect ratio of its resolution, scaled to sit inside a
-// unit square, so a 4:3 grid renders as a 4:3 plane.
 float2 fieldExtent() {
     return float2(engine.size) / float(max(engine.size.x, engine.size.y));
 }
 
-// Any point in cell coordinates, not just cell centres — box corners and fitted
-// shapes land between cells.
 float3 pointWorld(float2 cell, float h) {
     float2 uv = cell / float2(engine.size - 1);
     float2 extent = fieldExtent();
@@ -32,32 +26,22 @@ float3 cellWorld(uint2 p, float h) { return pointWorld(float2(p), h); }
 float3 orbit(float3 p) {
     float cy = cos(engine.yaw), sy = sin(engine.yaw);
     float3 a = float3(p.x * cy - p.z * sy, p.y, p.x * sy + p.z * cy);
-    // Pitch turns the world the opposite way to the camera: get this sign wrong
-    // and raising the pitch swings the view under the terrain, so height counts
-    // as distance and peaks lose the depth test to valleys.
     float cp = cos(engine.pitch), sp = sin(engine.pitch);
     return float3(a.x, a.y * cp + a.z * sp, a.z * cp - a.y * sp);
 }
 
-// Orthographic, with w left at 1 so an effect can offset clip.xy afterwards for
-// screen-space shapes such as billboards.
 float4 project(float3 world) {
     float3 r = orbit(world);
     return float4(r.x * engine.zoom / engine.aspect, r.y * engine.zoom, r.z * 0.25 + 0.5, 1.0);
 }
 
-// Size of one cell on screen, in clip units, for effects that draw per cell.
 float2 cellOnScreen() {
     float2 cell = fieldExtent() / float2(engine.size - 1) * engine.zoom;
     return float2(cell.x / engine.aspect, cell.y);
 }
 
-// A position no rasteriser will keep: past the far plane. The way a vertex
-// shader drops a cell it has decided not to draw.
 static const float4 CULLED = float4(0.0, 0.0, 2.0, 1.0);
 
-// uv comes from the vertex shader as p / (size - 1), so undoing it uses the same
-// span. Sampling against size instead lands half a cell off the geometry.
 int2 cellOf(float2 uv) { return clampCell(int2(round(uv * float2(engine.size - 1)))); }
 
 float heightSmooth(float2 uv) {
@@ -69,9 +53,6 @@ float heightSmooth(float2 uv) {
     return lerp(top, bottom, f.y);
 }
 
-// Per pixel off the interpolated height, so shading matches the surface the
-// vertex shader actually built rather than stepping once per cell. Gradients are
-// per world unit, which is not the same as per cell once the field is not square.
 float3 normalAt(float2 uv) {
     float2 step = 1.0 / float2(engine.size - 1);
     float2 spacing = fieldExtent() * step;
@@ -80,9 +61,6 @@ float3 normalAt(float2 uv) {
     return normalize(float3(-gx * engine.heightScale, 1.0, -gz * engine.heightScale));
 }
 
-// Dividing by fwidth keeps a contour one pixel wide whatever the slope does.
-// Ground flattened to a constant has no derivative to divide by, and no contour
-// crossing it either, so it draws no line rather than NaN or a solid fill.
 float contourMask(float h, float interval, float width) {
     float f = h / interval;
     float slope = fwidth(f);

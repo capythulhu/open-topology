@@ -18,12 +18,8 @@ uint at(int2 p) { int2 q = clampCell(p); return uint(q.y) * engine.size.x + uint
 
 float depthAt(int2 p) { return outside(p) ? 0.0 : water[at(p)]; }
 
-// What the water's own surface sits at: the sand plus whatever is standing on it.
 float surfaceAt(int2 p) { return heightAt(p) + depthAt(p); }
 
-// Water is drawn toward the level wherever the sand is below it, and drains where
-// the sand rises above. The flow passes do the rest, so raising a dune under water
-// pushes it off rather than teleporting it.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void feed(uint3 tid: SV_DispatchThreadID) {
@@ -33,8 +29,6 @@ void feed(uint3 tid: SV_DispatchThreadID) {
     water[i] = max(water[i] + (wanted - water[i]) * fill, 0.0);
 }
 
-// Pipe model: every cell keeps an outflow to each neighbour, accelerated by the
-// drop in surface height and damped so it settles instead of ringing.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void flow(uint3 tid: SV_DispatchThreadID) {
@@ -54,8 +48,6 @@ void flow(uint3 tid: SV_DispatchThreadID) {
         leaving += value;
     }
 
-    // Never send away more than the cell is holding, or depths go negative and
-    // the surface tears itself apart.
     if (leaving > water[i] && leaving > 0.0) next *= water[i] / leaving;
     flux[i] = next;
 }
@@ -78,16 +70,11 @@ void advance(uint3 tid: SV_DispatchThreadID) {
 
     float updated = max(water[i] + arriving - leaving, 0.0);
 
-    // Four-neighbour flux leaves an alternating checkerboard sitting in its null
-    // space, which the specular then turns into glitter. A little viscosity is
-    // the cheapest thing that removes it.
     float around = 0.25 * (depthAt(p + DIRS[0]) + depthAt(p + DIRS[1]) +
                            depthAt(p + DIRS[2]) + depthAt(p + DIRS[3]));
     settled[i] = lerp(updated, around, 0.12);
 }
 
-// Written to a second buffer and copied back, so no pass ever reads depths that
-// another thread has already advanced.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void commit(uint3 tid: SV_DispatchThreadID) {
@@ -96,8 +83,6 @@ void commit(uint3 tid: SV_DispatchThreadID) {
     water[i] = settled[i];
 }
 
-// Shade against the water's surface, not the sand under it, so a pool reads flat
-// and glassy even though the mesh beneath it is not.
 float3 surfaceNormal(int2 p) {
     float2 spacing = fieldExtent() / float2(engine.size - 1);
     float gx = (surfaceAt(p + DIRS[0]) - surfaceAt(p + DIRS[1])) / (2.0 * spacing.x);
@@ -121,8 +106,6 @@ float4 fragmentMain(Varying v) : SV_Target {
     float sunk = saturate(depth * engine.heightMm / fadeMm);
     float3 tint = lerp(float3(0.16, 0.55, 0.62), float3(0.01, 0.09, 0.27), sunk);
 
-    // Shallows stay translucent so the sand reads through them, and the shoreline
-    // gets a little brightness where the two meet.
     float shore = (1.0 - sunk) * (1.0 - sunk);
     float3 rgb = lerp(land, tint * lambert, saturate(0.18 + sunk * 0.78));
     return float4(rgb + sparkle * 0.25 + shore * 0.06, 1.0);

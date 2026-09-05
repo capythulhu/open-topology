@@ -8,11 +8,6 @@ export type Preview = {
   draw: (frame: Uint8Array<ArrayBuffer>, crop: { x: number; y: number; size: number; aspect: number }) => void;
 };
 
-/**
- * Raw depth from the sensor, greyed between the nearest and furthest readings in
- * frame so it stays legible whatever it is pointed at, with holes left black and
- * the crop drawn on top — which is what makes it useful for aiming.
- */
 export function createPreview(): Preview {
   const element = document.createElement('canvas');
   element.className = 'preview';
@@ -40,7 +35,6 @@ export function createPreview(): Preview {
       for (let x = 0; x < WIDTH; x++) {
         const z = samples[sy * DEPTH_WIDTH + (((x * DEPTH_WIDTH) / WIDTH) | 0)];
         const at = (y * WIDTH + x) * 4;
-        // Near reads bright, so what is closest to the camera stands out.
         const shade = z === 0 ? 0 : 40 + 215 * (1 - (z - near) / span);
         image.data[at] = shade;
         image.data[at + 1] = shade;

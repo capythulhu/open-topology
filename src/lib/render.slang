@@ -1,9 +1,6 @@
 #ifndef OT_RENDER
 #define OT_RENDER
 
-// The stock surface: the field as a shaded mesh. Effects that only want to
-// colour it include this and write a fragment shader. Effects that want their
-// own geometry include surface.slang instead and write both stages.
 #include "surface.slang"
 
 struct Varying {

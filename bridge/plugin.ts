@@ -4,8 +4,6 @@ import type { Plugin } from 'vite';
 
 const BINARY = 'bridge/depth';
 
-// The kinect allows one reader at a time, so a reconnect has to wait for the
-// previous process to actually exit before the device can be opened again.
 let current: ChildProcess | null = null;
 
 function stopCurrent(): Promise<void> {
@@ -43,9 +41,6 @@ export function kinectBridge(): Plugin {
         let streaming = false;
         child.stderr.on('data', (chunk: Buffer) => { problem += chunk.toString(); });
 
-        // Hold the headers back until the first frame, so a device that refuses
-        // to open is reported as an error the ui can show instead of an empty
-        // stream the browser has to guess about.
         child.stdout.once('data', (chunk: Buffer) => {
           streaming = true;
           response.setHeader('content-type', 'application/octet-stream');

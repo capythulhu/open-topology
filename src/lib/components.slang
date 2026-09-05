@@ -4,15 +4,6 @@
 #include "field.slang"
 #include "surface.slang"
 
-// Connected components of everything raised above a threshold. Including this
-// header gives an effect the `seed` and `merge` passes, which run before the
-// effect's own since they are declared first, and leaves `owner[i]` holding the
-// index of each cell's region root — or NONE for the floor. A root's owner is
-// itself, which is how a later pass finds one thread per region.
-//
-// The threshold is the `cutoff` param unless the effect defines
-// COMPONENT_THRESHOLD before including this, for a threshold of its own.
-
 #ifndef COMPONENT_THRESHOLD
 [Param(0.03, 0.0, 0.3)] uniform float cutoff;
 #define COMPONENT_THRESHOLD cutoff
@@ -32,9 +23,6 @@ void seed(uint3 tid: SV_DispatchThreadID) {
     owner[i].store(heightAt(int2(tid.xy)) > COMPONENT_THRESHOLD ? i : NONE);
 }
 
-// Label propagation with union-find path shortening: every cell adopts the
-// smallest label among its neighbours and pulls its root down with it, so a
-// merge reaches the whole region in a few passes instead of one cell per pass.
 [shader("compute")]
 [numthreads(8, 8, 1)]
 [Iterations(16)]

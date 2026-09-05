@@ -1,9 +1,5 @@
 #include "lib/surface.slang"
 
-// A reference grid under the field, drawn by the runtime beneath every effect.
-// Real lines rather than tiles, so their width holds on screen at any field
-// resolution; each is a thin quad the full span of the field.
-
 [Param(16.0, 0.0, 64.0)]  uniform float spacing;
 [Param(0.0, -0.5, 0.5)]   uniform float level;
 
@@ -17,8 +13,6 @@ static const float2 CORNERS[6] = {
 
 struct Line { float4 clip : SV_Position; };
 
-// Lines fall on multiples of the spacing, which never lands on the far edge, so
-// the last line in each direction is placed there explicitly to close the border.
 uint lineCell(uint index, uint count, uint every, uint last) {
     return index == count - 1 ? last : min(index * every, last);
 }
@@ -53,9 +47,6 @@ Line vertexMain(uint vid: SV_VertexID) {
 
     o.clip = project(world);
 
-    // A flat floor sits at exactly the grid's height, and an exact depth tie is
-    // decided pixel by pixel, which shreds the lines. Pulling the grid a hair
-    // toward the camera makes it win on the floor and lose under anything raised.
     o.clip.z -= 0.0008;
     return o;
 }

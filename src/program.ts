@@ -42,10 +42,6 @@ function slotsOf(code: string): Slot[] {
   }));
 }
 
-// Each stage may only see so many storage buffers, and the count is taken from
-// the layout, not from what a shader touches. Reflection lists every global for
-// every entry point, so usage has to come from the WGSL: walk each entry
-// point's call graph and note which buffers it actually reaches.
 function bodiesOf(code: string): Map<string, string> {
   const bodies = new Map<string, string>();
   const heads = /\bfn\s+(\w+)\s*\(/g;
@@ -103,9 +99,6 @@ function iterationsOf(entry: EntryPoint): number {
   return Number(entry.userAttribs?.find((a) => a.name === 'Iterations')?.arguments[0] ?? 1);
 }
 
-// The wasm build's reflection reports struct fields but not the struct's own
-// size, and nothing at all for scalars, so this pieces the stride together.
-// Over-allocating is harmless; under-allocating rejects every command buffer.
 function elementBytes(reflection: Reflection, name: string): number {
   const element = reflection.parameters.find((p) => p.name === name)?.type?.resultType;
   if (!element) return 16;
@@ -181,7 +174,6 @@ export class Program {
       if (buffers[from] && buffers[to]) this.snapshots.push({ from: buffers[from], to: buffers[to] });
     }
 
-    // read_write storage is illegal in the vertex stage, so those bindings skip it.
     const visible = visibilityOf(slang.code, slots, slang.reflection.entryPoints);
     const layout = device.createBindGroupLayout({
       entries: slots.map((s) => ({
@@ -263,8 +255,6 @@ export class Program {
 
   draw(pass: GPURenderPassEncoder, columns: number, rows: number) {
     if (!this.renderPipeline) return;
-    // PerCell scales with the field, Vertices is a fixed extra on top; an
-    // effect with both draws its per-cell geometry first and the fixed part after.
     const vertices =
       this.perCell === null && this.fixedVertices === null
         ? (columns - 1) * (rows - 1) * 6

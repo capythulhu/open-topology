@@ -1,6 +1,3 @@
-// Streams Kinect depth to stdout as raw 640x480 uint16 millimetre frames.
-// Nothing else: the Vite plugin in plugin.ts pipes these straight to the browser.
-
 #include <libfreenect/libfreenect.h>
 #include <libusb-1.0/libusb.h>
 #include <fcntl.h>
@@ -21,9 +18,6 @@
 static volatile sig_atomic_t running = 1;
 static volatile sig_atomic_t frames = 0;
 
-// Two readers on one kinect do not fail cleanly: the second opens fine and then
-// silently receives nothing, which looks exactly like broken hardware. A lock
-// turns thirty seconds of confusion into one accurate line.
 static int lock_device(void) {
     int fd = open(LOCK_PATH, O_CREAT | O_RDWR, 0644);
     if (fd < 0) return 0;
@@ -45,9 +39,6 @@ static void on_depth(freenect_device *device, void *depth, uint32_t timestamp) {
     frames++;
 }
 
-// A reader killed mid-stream leaves the device streaming into nothing, after
-// which it opens cleanly but never delivers a frame. A usb reset clears that
-// without anyone having to reach behind the desk.
 static void reset_device(void) {
     libusb_context *usb = NULL;
     if (libusb_init(&usb) < 0) return;
@@ -74,13 +65,8 @@ static int stream(int wait_for_device) {
 
     freenect_set_log_level(context, FREENECT_LOG_FATAL);
 
-    // The 1414 will not stream depth unless the motor interface is opened too:
-    // with FREENECT_DEVICE_CAMERA alone libusb loses every packet and no frame
-    // ever completes.
     freenect_select_subdevices(context, FREENECT_DEVICE_MOTOR | FREENECT_DEVICE_CAMERA);
 
-    // After a reset the device drops off the bus and re-enumerates, which takes
-    // a few seconds.
     for (int tries = 0; freenect_num_devices(context) < 1; tries++) {
         if (!wait_for_device || tries >= 10 || !running) {
             fprintf(stderr, "no kinect found — check the 12V power adapter, the usb cable alone will not do\n");
@@ -100,8 +86,6 @@ static int stream(int wait_for_device) {
     freenect_set_depth_callback(device, on_depth);
     freenect_start_depth(device);
 
-    // freenect_process_events blocks, so the stalled-device check needs the
-    // timeout variant to get a look in at all.
     time_t opened = time(NULL);
     struct timeval wait = {1, 0};
     while (running && freenect_process_events_timeout(context, &wait) >= 0) {
@@ -129,8 +113,6 @@ int main(void) {
     fprintf(stderr, "kinect sent no frames, resetting it over usb...\n");
     reset_device();
 
-    // The device drops off the bus and comes back, and is briefly enumerable but
-    // not yet openable, so give it a few goes.
     for (int attempt = 0; attempt < 4 && running; attempt++) {
         sleep(2);
         if (stream(1) > 0) return 0;

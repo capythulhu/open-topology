@@ -1,8 +1,5 @@
 #include "../lib/surface.slang"
 
-// Every raised cell becomes a glowing dot; the floor draws nothing at all.
-// Reads rawHeights, so a hand sweeping through leaves no fading trail.
-
 [Param(0.03, 0.0, 0.3)]  uniform float cutoff;
 [Param(0.8, 0.1, 3.0)]   uniform float size;
 [Param(0.4, 0.0, 1.0)]   uniform float rise;
@@ -33,8 +30,6 @@ Dot vertexMain(uint vid: SV_VertexID) {
         return o;
     }
 
-    // A billboard: project the cell, then push the corners out in screen space
-    // so the dot faces the camera whatever the orbit is doing.
     float4 clip = project(cellWorld(p, h + o.lift * rise * 0.2));
     clip.xy += o.corner * cellOnScreen() * size * 0.5;
     o.clip = clip;

@@ -42,8 +42,6 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 uv = float2(tid.xy) / float2(engine.size);
     float t = engine.time * speed;
     float h = fbm(uv * frequency + float2(t, t * 0.6), int(octaves));
-    // Rises from 0 rather than straddling it, so the floor sits where the grid
-    // and a calibrated sensor both put it.
     uint i = cellIndex(tid.xy);
     heights[i] = h * amplitude;
     rawHeights[i] = heights[i];

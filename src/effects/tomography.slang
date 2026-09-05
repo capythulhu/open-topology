@@ -1,15 +1,9 @@
 #include "../lib/render.slang"
 
-// A horizontal plane scans up and down through the scene. Above it the surface
-// is reduced to faint scanlines, at it a bright cut, below it solid — a CT slice
-// moving through whatever is on the table. Each object's cross-section at the
-// plane is measured, and the plane's own height reads at the corner.
-
 [Param(0.4, 0.0, 1.0)]   uniform float sweep;
 [Param(0.12, 0.0, 0.5)]  uniform float level;
 [Param(0.45, 0.05, 0.5)] uniform float top;
 
-// The threshold for components is the plane, which moves.
 float scanHeight() {
     if (sweep <= 0.0) return level;
     float phase = frac(engine.time * sweep * 0.25);
@@ -62,7 +56,6 @@ void annotate(uint3 tid: SV_DispatchThreadID) {
     uint i = cellIndex(tid.xy);
     float scan = scanHeight();
 
-    // Slot zero is the plane's own height, anchored at the near corner.
     if (i == 0) {
         Label plane;
         plane.cell = float2(0.0, float(engine.size.y - 1));
@@ -99,17 +92,14 @@ float4 fragmentMain(Varying v) : SV_Target {
     float scan = scanHeight();
     float shade = shading(v.uv);
 
-    // At the plane: the cut itself, bright.
     if (abs(h - scan) < BAND) return float4(0.55, 1.0, 1.0, 1.0);
 
-    // Above it: only sparse scanlines survive, so what is below can be seen.
     if (h > scan) {
         float row = v.uv.y * float(engine.size.y - 1);
         if (uint(row) % 4u != 0u || frac(row) > 0.3) discard;
         return float4(float3(0.16, 0.30, 0.34) * shade, 1.0);
     }
 
-    // Below it: solid, cool, brighter toward the cut.
     float toward = saturate(1.0 - (scan - h) / max(scan, 0.05));
     float3 deep = float3(0.05, 0.10, 0.16);
     float3 near = float3(0.14, 0.42, 0.50);
