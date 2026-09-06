@@ -29,7 +29,6 @@ struct Region {
 RWStructuredBuffer<Column> velocity;
 RWStructuredBuffer<Column> carried;
 RWStructuredBuffer<Scalars> pressure;
-RWStructuredBuffer<Scalars> divergence;
 RWStructuredBuffer<Region> regions;
 RWStructuredBuffer<Atomic<uint>> gauge;
 RWStructuredBuffer<float4> path;
@@ -148,7 +147,7 @@ void diverge(uint3 tid: SV_DispatchThreadID) {
     uint i = cellIndex(tid.xy);
     for (int z = 0; z < int(LAYERS); z++) {
         int3 p = int3(tid.xy, z);
-        divergence[i].s[z] = 0.5 * (
+        carried[i].v[z].w = 0.5 * (
             fieldAt(carried, p + int3(1, 0, 0)).x - fieldAt(carried, p + int3(-1, 0, 0)).x +
             fieldAt(carried, p + int3(0, 1, 0)).y - fieldAt(carried, p + int3(0, -1, 0)).y +
             fieldAt(carried, p + int3(0, 0, 1)).z - fieldAt(carried, p + int3(0, 0, -1)).z);
@@ -167,7 +166,7 @@ void relax(uint3 tid: SV_DispatchThreadID) {
         float sum = pressureAt(p + int3(1, 0, 0), own) + pressureAt(p + int3(-1, 0, 0), own)
                   + pressureAt(p + int3(0, 1, 0), own) + pressureAt(p + int3(0, -1, 0), own)
                   + pressureAt(p + int3(0, 0, 1), own) + pressureAt(p + int3(0, 0, -1), own);
-        pressure[i].s[z] = (sum - divergence[i].s[z]) / 6.0;
+        pressure[i].s[z] = (sum - carried[i].v[z].w) / 6.0;
     }
 }
 
