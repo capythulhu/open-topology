@@ -9,9 +9,24 @@ export type WarpState = {
   tilt: number;
   mirrorX: boolean;
   mirrorY: boolean;
+  height: number;
+  centerX: number;
+  centerY: number;
 };
 
-export const WARP_DEFAULT: WarpState = { x: 0, y: 0, scaleX: 1, scaleY: 1, quarter: 0, tilt: 0, mirrorX: false, mirrorY: false };
+export const WARP_DEFAULT: WarpState = {
+  x: 0,
+  y: 0,
+  scaleX: 1,
+  scaleY: 1,
+  quarter: 0,
+  tilt: 0,
+  mirrorX: false,
+  mirrorY: false,
+  height: 0,
+  centerX: 0,
+  centerY: 0,
+};
 
 export const angleOf = (state: WarpState) => state.quarter * 90 + state.tilt;
 

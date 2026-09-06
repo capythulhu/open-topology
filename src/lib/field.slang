@@ -33,6 +33,9 @@ struct Engine {
     float heightMm;
     float cellMm;
     float flat;
+    float eyeX;
+    float eyeY;
+    float eyeHeight;
 }
 
 ConstantBuffer<Engine> engine;

@@ -31,6 +31,11 @@ float3 orbit(float3 p) {
 }
 
 float4 project(float3 world) {
+    if (engine.eyeHeight > 0.0) {
+        float k = engine.eyeHeight / max(engine.eyeHeight - world.y, 0.05);
+        world.x = engine.eyeX + (world.x - engine.eyeX) * k;
+        world.z = engine.eyeY + (world.z - engine.eyeY) * k;
+    }
     float3 r = orbit(world);
     return float4(r.x * engine.zoom / engine.aspect, r.y * engine.zoom, r.z * 0.25 + 0.5, 1.0);
 }

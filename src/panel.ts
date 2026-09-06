@@ -23,7 +23,7 @@ export type Panel = {
   notice: string;
 };
 
-function slider(param: Param, onChange: (name: string, value: number) => void): HTMLElement {
+export function slider(param: Param, onChange: (name: string, value: number) => void): HTMLElement {
   const row = document.createElement('label');
   row.className = 'row';
 

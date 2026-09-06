@@ -25,7 +25,7 @@ import * as tomography from './effects/tomography.slang';
 import * as water from './effects/water.slang';
 import * as domes from './effects/domes.slang';
 
-const ENGINE_BYTES = 48;
+const ENGINE_BYTES = 64;
 const DEPTH_BYTES = 640 * 480 * 2;
 
 const FIELDS: Record<string, { columns: number; rows: number }> = {
@@ -407,6 +407,7 @@ async function main() {
     values[6] = camera.zoom;
     values[7] = width / height;
     values[10] = 0;
+    values[13] = 0;
     const param = (name: string) => sources[activeSource].params.find((p) => p.name === name)?.value;
     values[8] =
       activeSource === 'kinect'
@@ -460,6 +461,11 @@ async function main() {
       values[6] = Math.min((2 * aspect) / (field.columns / longest), 2 / (field.rows / longest)) * 0.98;
       values[7] = aspect;
       values[10] = 1;
+      const fieldMm = longest * values[9];
+      values[2] = values[8] / fieldMm;
+      values[11] = (warpState.centerX * field.columns) / longest;
+      values[12] = (warpState.centerY * field.rows) / longest;
+      values[13] = warpState.height / fieldMm;
       device.queue.writeBuffer(engine, 0, engineData);
 
       const overhead = device.createCommandEncoder();

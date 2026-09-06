@@ -138,4 +138,5 @@ input[type='range'] { width: 100%; accent-color: #6aa9ff; }
 .handle.se { bottom: 0; right: 0; }
 .tools { display: flex; gap: 6px; }
 .tools button { margin-top: 0; padding: 4px 0; font-size: 15px; }
+.sliders { margin-top: 14px; }
 .hint { margin: 0 0 4px; font-size: 11px; color: #8a8f9a; }

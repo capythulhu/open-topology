@@ -1,3 +1,4 @@
+import { slider } from './panel';
 import { angleOf, WARP_DEFAULT, type WarpState } from './warp';
 
 const CORNERS = ['nw', 'ne', 'sw', 'se'] as const;
@@ -114,34 +115,26 @@ export function renderStage(state: WarpState, aspect: number, fieldAspect: numbe
   tool('↻', 'rotate a quarter turn', () => (state.quarter = (state.quarter + 1) % 4));
   tool('⟲', 'reset', () => Object.assign(state, WARP_DEFAULT));
 
-  const tilt = document.createElement('label');
-  tilt.className = 'row';
-  const head = document.createElement('div');
-  head.className = 'head';
-  const name = document.createElement('span');
-  name.textContent = 'tilt';
-  const readout = document.createElement('output');
-  readout.textContent = `${state.tilt.toFixed(1)}°`;
-  head.append(name, readout);
-  const input = document.createElement('input');
-  input.type = 'range';
-  input.min = '-15';
-  input.max = '15';
-  input.step = '0.1';
-  input.value = String(state.tilt);
-  input.addEventListener('input', () => {
-    state.tilt = Number(input.value);
-    readout.textContent = `${state.tilt.toFixed(1)}°`;
-    place();
-    onChange();
-  });
-  tilt.append(head, input);
+  const sliders = document.createElement('div');
+  sliders.className = 'sliders';
+  const control = (name: keyof WarpState, lo: number, hi: number) =>
+    sliders.append(
+      slider({ name, offset: 0, value: Number(state[name]), lo, hi }, (_, value) => {
+        (state[name] as number) = value;
+        place();
+        onChange();
+      }),
+    );
+  control('tilt', -15, 15);
+  control('height', 0, 4000);
+  control('centerX', -0.5, 0.5);
+  control('centerY', -0.5, 0.5);
 
   const hint = document.createElement('p');
   hint.className = 'hint';
   hint.textContent = 'drag to move, drag a corner to stretch, arrow keys to nudge';
 
   const wrap = document.createElement('div');
-  wrap.append(stage, tools, tilt, hint);
+  wrap.append(stage, tools, sliders, hint);
   return wrap;
 }
