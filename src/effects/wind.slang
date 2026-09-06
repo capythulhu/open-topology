@@ -12,9 +12,10 @@ static const uint LAYERS = 16;
 static const float THICK = 0.5 / float(LAYERS);
 static const uint MAX_LINES = 40;
 static const uint ROWS = 3;
-static const uint STEPS = 160;
+static const uint STEPS = 200;
 static const float STRIDE = 1.5;
 static const float QUANTA = 4096.0;
+static const float SIM_MAX = 256.0;
 
 struct Column { float4 v[LAYERS]; }
 struct Scalars { float s[LAYERS]; }
@@ -35,34 +36,43 @@ RWStructuredBuffer<float4> path;
 [Snapshot("path")] StructuredBuffer<float4> curve;
 [Labels] RWStructuredBuffer<Label> labels;
 
-bool insideXY(int2 p) { return all(p >= int2(0)) && all(p < int2(engine.size)); }
-uint at(int2 p) { int2 q = clampCell(p); return uint(q.y) * engine.size.x + uint(q.x); }
+float cellScale() { return max(float(max(engine.size.x, engine.size.y)) / SIM_MAX, 1.0); }
+uint2 simSize() { return uint2(ceil(float2(engine.size) / cellScale())); }
+uint simIndex(uint2 v) { return v.y * simSize().x + v.x; }
+int2 toField(int2 v) { return int2(round((float2(v) + 0.5) * cellScale() - 0.5)); }
+int2 toSim(int2 p) { return int2((float2(p) + 0.5) / cellScale()); }
+
+bool insideXY(int2 v) { return all(v >= int2(0)) && all(v < int2(simSize())); }
+uint at(int2 v) { return simIndex(uint2(clamp(v, int2(0), int2(simSize()) - 1))); }
 
 float2 windDir() { float a = radians(angle); return float2(cos(a), sin(a)); }
 float3 freeStream() { return float3(windDir() * wind, 0.0); }
 
 bool inflowEdge(int2 v) {
     float2 d = windDir();
-    return (v.x < 0 && d.x > 0.05) || (v.x >= int(engine.size.x) && d.x < -0.05)
-        || (v.y < 0 && d.y > 0.05) || (v.y >= int(engine.size.y) && d.y < -0.05);
+    int2 size = int2(simSize());
+    return (v.x < 0 && d.x > 0.05) || (v.x >= size.x && d.x < -0.05)
+        || (v.y < 0 && d.y > 0.05) || (v.y >= size.y && d.y < -0.05);
 }
 
 bool outflowEdge(int2 v) {
     float2 d = windDir();
-    return (v.x >= int(engine.size.x) && d.x > 0.05) || (v.x < 0 && d.x < -0.05)
-        || (v.y >= int(engine.size.y) && d.y > 0.05) || (v.y < 0 && d.y < -0.05);
+    int2 size = int2(simSize());
+    return (v.x >= size.x && d.x > 0.05) || (v.x < 0 && d.x < -0.05)
+        || (v.y >= size.y && d.y > 0.05) || (v.y < 0 && d.y < -0.05);
 }
 
 bool atInflow(int2 p) {
     float2 d = windDir();
-    return (d.x > 0.05 && p.x < 2) || (d.x < -0.05 && p.x >= int(engine.size.x) - 2)
-        || (d.y > 0.05 && p.y < 2) || (d.y < -0.05 && p.y >= int(engine.size.y) - 2);
+    int2 size = int2(simSize());
+    return (d.x > 0.05 && p.x < 2) || (d.x < -0.05 && p.x >= size.x - 2)
+        || (d.y > 0.05 && p.y < 2) || (d.y < -0.05 && p.y >= size.y - 2);
 }
 
 bool solid(int3 v) {
     if (v.z < 0) return true;
     if (v.z >= int(LAYERS)) return false;
-    return (float(v.z) + 0.5) * THICK < heightAt(v.xy);
+    return (float(v.z) + 0.5) * THICK < heightAt(toField(v.xy));
 }
 
 float3 fieldAt(RWStructuredBuffer<Column> field, int3 v) {
@@ -99,7 +109,7 @@ float stagnation() { return 0.5 * wind * wind; }
 
 float onSurface(int2 p) {
     int z = clamp(int(ceil(heightAt(p) / THICK)), 0, int(LAYERS) - 1);
-    return pushAt(int3(p, z));
+    return pushAt(int3(toSim(p), z));
 }
 
 [shader("compute")]
@@ -118,9 +128,9 @@ void reset(uint3 tid: SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void blow(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint i = cellIndex(tid.xy);
-    float ground = heightAt(int2(tid.xy)) / THICK;
+    if (any(tid.xy >= simSize())) return;
+    uint i = simIndex(tid.xy);
+    float ground = heightAt(toField(int2(tid.xy))) / THICK;
     for (int z = 0; z < int(LAYERS); z++) {
         float3 v = velocity[i].v[z].xyz;
         float pull = 0.05 * saturate((float(z) - ground) / 5.0);
@@ -131,8 +141,8 @@ void blow(uint3 tid: SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void advect(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint i = cellIndex(tid.xy);
+    if (any(tid.xy >= simSize())) return;
+    uint i = simIndex(tid.xy);
     for (int z = 0; z < int(LAYERS); z++) {
         int3 here = int3(tid.xy, z);
         float3 from = float3(here) - velocity[i].v[z].xyz;
@@ -143,8 +153,8 @@ void advect(uint3 tid: SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void diverge(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint i = cellIndex(tid.xy);
+    if (any(tid.xy >= simSize())) return;
+    uint i = simIndex(tid.xy);
     for (int z = 0; z < int(LAYERS); z++) {
         int3 p = int3(tid.xy, z);
         carried[i].v[z].w = 0.5 * (
@@ -158,8 +168,8 @@ void diverge(uint3 tid: SV_DispatchThreadID) {
 [numthreads(8, 8, 1)]
 [Iterations(30)]
 void relax(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint i = cellIndex(tid.xy);
+    if (any(tid.xy >= simSize())) return;
+    uint i = simIndex(tid.xy);
     for (int z = 0; z < int(LAYERS); z++) {
         int3 p = int3(tid.xy, z);
         float own = pressure[i].s[z];
@@ -173,8 +183,8 @@ void relax(uint3 tid: SV_DispatchThreadID) {
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void project(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint i = cellIndex(tid.xy);
+    if (any(tid.xy >= simSize())) return;
+    uint i = simIndex(tid.xy);
     for (int z = 0; z < int(LAYERS); z++) {
         int3 p = int3(tid.xy, z);
         if (solid(p)) { velocity[i].v[z] = float4(0.0); continue; }
@@ -195,11 +205,11 @@ static const float WEIGHT = 64.0;
 [shader("compute")]
 [numthreads(8, 8, 1)]
 void impact(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
+    if (any(tid.xy >= simSize())) return;
     int2 p = int2(tid.xy);
     int2 downwind = downwindOf(p);
     if (!insideXY(downwind)) return;
-    uint root = ownerAt(downwind);
+    uint root = ownerAt(toField(downwind));
     if (root == NONE) return;
 
     float strongest = 0.0;
@@ -215,9 +225,10 @@ void impact(uint3 tid: SV_DispatchThreadID) {
     gauge[0].max(quantised);
 
     uint w = uint(strongest * WEIGHT) + 1;
+    uint2 cell = uint2(toField(p));
     regions[root].weight.add(w);
-    regions[root].sumX.add(w * tid.x);
-    regions[root].sumY.add(w * tid.y);
+    regions[root].sumX.add(w * cell.x);
+    regions[root].sumY.add(w * cell.y);
 }
 
 [shader("compute")]
@@ -267,14 +278,14 @@ void trace(uint3 tid: SV_DispatchThreadID) {
     uint row = n / across;
     uint column = n % across;
     float2 dir = windDir();
-    float2 centre = float2(engine.size - 1) * 0.5;
+    float2 centre = float2(simSize() - 1) * 0.5;
     float reach = length(centre) + 2.0;
     float offset = ((float(column) + 0.5) / float(across) - 0.5) * 2.0 * reach;
     float3 p = float3(centre - dir * reach + float2(-dir.y, dir.x) * offset, 1.5 + float(row) * 4.5);
 
     bool alive = false;
     for (uint walk = 0; walk < 400; walk++) {
-        if (all(p.xy >= float2(0.0)) && all(p.xy <= float2(engine.size - 1))) { alive = true; break; }
+        if (all(p.xy >= float2(0.0)) && all(p.xy <= float2(simSize() - 1))) { alive = true; break; }
         p.xy += dir * STRIDE;
     }
     alive = alive && !solid(int3(round(p)));
@@ -285,14 +296,15 @@ void trace(uint3 tid: SV_DispatchThreadID) {
 
         uint slot = n * STEPS + m;
         float4 was = path[slot];
-        float3 shown = was.x >= 0.0 && alive ? lerp(was.xyz, float3(p.xy, (p.z + 0.5) * THICK), 0.2) : float3(p.xy, (p.z + 0.5) * THICK);
+        float3 now = float3(p.xy * cellScale(), (p.z + 0.5) * THICK);
+        float3 shown = was.x >= 0.0 && alive ? lerp(was.xyz, now, 0.2) : now;
         path[slot] = alive ? float4(shown, length(v) / wind) : float4(-1.0, 0.0, 0.0, 0.0);
         if (!alive) continue;
 
         float3 v2 = fieldSmooth(velocity, p + normalize(v) * STRIDE * 0.5);
         if (length(v2) < 0.02) { alive = false; continue; }
         p += normalize(v2) * STRIDE;
-        if (any(p.xy < float2(0.0)) || any(p.xy > float2(engine.size - 1)) || p.z < 0.0 || p.z > float(LAYERS) - 1.0) alive = false;
+        if (any(p.xy < float2(0.0)) || any(p.xy > float2(simSize() - 1)) || p.z < 0.0 || p.z > float(LAYERS) - 1.0) alive = false;
     }
 }
 
@@ -311,7 +323,7 @@ static const float2 CORNERS[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1),
 
 [shader("vertex")]
 [PerCell(6)]
-[Vertices(114480)]
+[Vertices(143280)]
 Ribbon vertexMain(uint vid: SV_VertexID) {
     Ribbon o;
     o.uv = float2(0.0);
