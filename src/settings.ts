@@ -2,7 +2,6 @@ import type { WarpState } from './warp';
 
 export type Settings = {
   field?: string;
-  source?: string;
   effect?: string;
   params?: Record<string, Record<string, number>>;
   view?: { heightScale: number; spin: number };

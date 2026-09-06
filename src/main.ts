@@ -125,7 +125,7 @@ async function main() {
     draw();
   };
 
-  let activeSource = saved.source && SOURCES[saved.source] ? saved.source : 'bumps';
+  let activeSource = 'bumps';
   let activeEffect = saved.effect && EFFECTS[saved.effect] ? saved.effect : 'contours';
   let notice = '';
   const preview = createPreview();
@@ -144,7 +144,6 @@ async function main() {
   const persist = () =>
     saveSettings({
       field: fieldName,
-      source: activeSource,
       effect: activeEffect,
       params: Object.fromEntries(
         Object.entries(programs()).map(([name, program]) => [name, Object.fromEntries(program.params.map((p) => [p.name, p.value]))]),
