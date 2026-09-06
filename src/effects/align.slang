@@ -71,7 +71,8 @@ void place(uint3 tid: SV_DispatchThreadID) {
 [shader("fragment")]
 float4 fragmentMain(Varying v) : SV_Target {
     float2 p = v.uv * float2(engine.size - 1);
-    float3 color = float3(0.0);
+    bool raised = ownerAt(cellOf(v.uv)) != NONE;
+    float3 color = raised ? float3(0.15, 0.35, 1.0) : float3(0.45, 0.25, 0.05);
     for (uint k = 0; k < MAX_MARKS; k++) {
         Mark m = marks[k];
         if (m.live < 0.5) continue;
