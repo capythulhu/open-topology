@@ -128,7 +128,8 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     if (!sample(int2(raised(footing, high)), live, base)) return;
 
     float deviation = base - live;
-    float beyond = max(abs(deviation) - deadzone, 0.0);
+    float magnitude = abs(deviation);
+    float beyond = lerp(max(magnitude - deadzone, 0.0), magnitude, smoothstep(deadzone, 3.0 * deadzone, magnitude));
     float target = clamp(sign(deviation) * beyond / max(ground.spread, 1.0), -1.0, 2.5) * 0.5 * height;
 
     uint i = cellIndex(tid.xy);
