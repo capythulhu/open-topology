@@ -9,6 +9,7 @@ import * as gridModule from './grid.slang';
 import * as warpModule from './warp.slang';
 import { Warp, WARP_DEFAULT, type WarpState } from './warp';
 import { renderStage } from './stage';
+import { loadSettings, saveSettings } from './settings';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
 import * as bumps from './sources/bumps.slang';
@@ -25,7 +26,6 @@ import * as water from './effects/water.slang';
 
 const ENGINE_BYTES = 48;
 const DEPTH_BYTES = 640 * 480 * 2;
-const WARP_KEY = 'open-topology.projector';
 
 const FIELDS: Record<string, { columns: number; rows: number }> = {
   '256 x 256': { columns: 256, rows: 256 },
@@ -43,6 +43,7 @@ async function main() {
   const lettering = overlay.getContext('2d')!;
   const panel = document.querySelector<HTMLElement>('#panel')!;
   const { device, context, format } = await initGpu(canvas);
+  const saved = await loadSettings();
   const camera = createCamera(canvas);
   device.addEventListener('uncapturederror', (event) => {
     console.error('[gpu]', (event as GPUUncapturedErrorEvent).error.message);
@@ -73,7 +74,7 @@ async function main() {
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
-  let fieldName = '256 x 256';
+  let fieldName = saved.field && FIELDS[saved.field] ? saved.field : '256 x 256';
   let field = FIELDS[fieldName];
   const fieldBuffer = () =>
     device.createBuffer({
@@ -95,6 +96,11 @@ async function main() {
   let effects = build(EFFECTS);
   let grid = build({ grid: gridModule }).grid;
 
+  const programs = () => ({ ...sources, ...effects, grid });
+  for (const [name, program] of Object.entries(programs())) {
+    for (const [key, value] of Object.entries(saved.params?.[name] ?? {})) program.setParam(key, value);
+  }
+
   const setField = (name: string) => {
     const settings = [...Object.values(sources), ...Object.values(effects), grid].map((program) =>
       program.params.map((p) => [p.name, p.value] as const),
@@ -115,26 +121,40 @@ async function main() {
     });
 
     ground.spread = 0;
+    persist();
     draw();
   };
 
-  let activeSource = 'bumps';
-  let activeEffect = 'contours';
+  let activeSource = saved.source && SOURCES[saved.source] ? saved.source : 'bumps';
+  let activeEffect = saved.effect && EFFECTS[saved.effect] ? saved.effect : 'contours';
   let notice = '';
   const preview = createPreview();
   let shown = 0;
   let stream: DepthStream | null = null;
   let latest: Uint8Array<ArrayBuffer> | null = null;
-  const view = { heightScale: 0.9, spin: 0 };
+  const view = { heightScale: 0.9, spin: 0, ...saved.view };
 
   let projector: Window | null = null;
   let screen: HTMLCanvasElement | null = null;
   let screenContext: GPUCanvasContext | null = null;
   let projectorDepth: GPUTexture | null = null;
   let warp: Warp | null = null;
-  const warpState: WarpState = { ...WARP_DEFAULT, ...JSON.parse(localStorage.getItem(WARP_KEY) ?? '{}') };
+  const warpState: WarpState = { ...WARP_DEFAULT, ...saved.projector };
+
+  const persist = () =>
+    saveSettings({
+      field: fieldName,
+      source: activeSource,
+      effect: activeEffect,
+      params: Object.fromEntries(
+        Object.entries(programs()).map(([name, program]) => [name, Object.fromEntries(program.params.map((p) => [p.name, p.value]))]),
+      ),
+      view: { ...view },
+      projector: { ...warpState },
+    });
+
   const saveWarp = () => {
-    localStorage.setItem(WARP_KEY, JSON.stringify(warpState));
+    persist();
     warp?.set(warpState);
   };
 
@@ -181,6 +201,11 @@ async function main() {
     draw();
   };
 
+  const tune = (program: Program, name: string, value: number) => {
+    program.setParam(name, value);
+    persist();
+  };
+
   const draw = () => {
     renderPanel(panel, {
       fields: Object.keys(FIELDS),
@@ -193,6 +218,7 @@ async function main() {
       effect: activeEffect,
       onEffect: (name) => {
         activeEffect = name;
+        persist();
         draw();
       },
       preview: activeSource === 'kinect' ? preview.element : null,
@@ -210,8 +236,8 @@ async function main() {
       ],
       projector: warp ? renderStage(warpState, warp.frame.width / warp.frame.height, field.columns / field.rows, saveWarp) : null,
       groups: [
-        { title: activeSource, params: sources[activeSource].params, onChange: (n, v) => sources[activeSource].setParam(n, v) },
-        { title: activeEffect, params: effects[activeEffect].params, onChange: (n, v) => effects[activeEffect].setParam(n, v) },
+        { title: activeSource, params: sources[activeSource].params, onChange: (n, v) => tune(sources[activeSource], n, v) },
+        { title: activeEffect, params: effects[activeEffect].params, onChange: (n, v) => tune(effects[activeEffect], n, v) },
         {
           title: 'view',
           params: [
@@ -221,9 +247,10 @@ async function main() {
           onChange: (name, value) => {
             if (name === 'heightScale') view.heightScale = value;
             if (name === 'spin') view.spin = value;
+            persist();
           },
         },
-        { title: 'grid', params: grid.params, onChange: (n, v) => grid.setParam(n, v) },
+        { title: 'grid', params: grid.params, onChange: (n, v) => tune(grid, n, v) },
       ],
     });
   };
@@ -289,6 +316,7 @@ async function main() {
     latest = null;
     activeSource = name;
     notice = '';
+    persist();
 
     const blank = new Float32Array(field.columns * field.rows);
     device.queue.writeBuffer(heights, 0, blank);
@@ -336,7 +364,7 @@ async function main() {
     );
   };
 
-  draw();
+  void selectSource(activeSource);
 
   const engineData = new ArrayBuffer(ENGINE_BYTES);
   const sizes = new Uint32Array(engineData);

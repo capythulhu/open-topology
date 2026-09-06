@@ -2,9 +2,10 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import slang from 'vite-slang';
 import { kinectBridge } from './bridge/plugin';
+import { localSettings } from './settings/plugin';
 
 export default defineConfig({
-  plugins: [slang(), kinectBridge()],
+  plugins: [slang(), kinectBridge(), localSettings()],
   build: {
     rollupOptions: {
       input: {
