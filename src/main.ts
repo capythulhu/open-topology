@@ -124,8 +124,8 @@ async function main() {
   const view = { heightScale: 0.9, spin: 0 };
 
   let projector: Window | null = null;
-  let offscreen: OffscreenCanvas | null = null;
-  let offscreenContext: GPUCanvasContext | null = null;
+  let screen: HTMLCanvasElement | null = null;
+  let screenContext: GPUCanvasContext | null = null;
   let projectorDepth: GPUTexture | null = null;
 
   const openProjector = () => {
@@ -141,24 +141,28 @@ async function main() {
     const data = event.data;
     if (data?.type === 'projector-closed') {
       projector = null;
-      offscreen = null;
-      offscreenContext = null;
+      screen = null;
+      screenContext = null;
       projectorDepth?.destroy();
       projectorDepth = null;
-      return;
     }
-    if (data?.type === 'projector-canvas') {
-      offscreen = data.canvas as OffscreenCanvas;
-      offscreenContext = offscreen.getContext('webgpu');
-      offscreenContext?.configure({ device, format, alphaMode: 'opaque' });
-    }
-    if ((data?.type === 'projector-canvas' || data?.type === 'projector-size') && offscreen && data.width > 0 && data.height > 0) {
-      offscreen.width = data.width;
-      offscreen.height = data.height;
-      projectorDepth?.destroy();
-      projectorDepth = createDepth(device, data.width, data.height);
+    if (data?.type === 'projector-ready' && projector) {
+      screen = projector.document.querySelector<HTMLCanvasElement>('#screen');
+      screenContext = screen?.getContext('webgpu') ?? null;
+      screenContext?.configure({ device, format, alphaMode: 'opaque' });
     }
   });
+
+  const fitProjector = () => {
+    if (!screen) return;
+    const width = Math.max(1, screen.clientWidth);
+    const height = Math.max(1, screen.clientHeight);
+    if (projectorDepth && screen.width === width && screen.height === height) return;
+    screen.width = width;
+    screen.height = height;
+    projectorDepth?.destroy();
+    projectorDepth = createDepth(device, width, height);
+  };
 
   const draw = () => {
     renderPanel(panel, {
@@ -398,9 +402,10 @@ async function main() {
 
     device.queue.submit([encoder.finish()]);
 
-    if (projector && !projector.closed && offscreen && offscreenContext && projectorDepth) {
+    fitProjector();
+    if (projector && !projector.closed && screen && screenContext && projectorDepth) {
       const longest = Math.max(field.columns, field.rows);
-      const aspect = offscreen.width / offscreen.height;
+      const aspect = screen.width / screen.height;
       values[4] = 0;
       values[5] = Math.PI / 2;
       values[6] = Math.min((2 * aspect) / (field.columns / longest), 2 / (field.rows / longest)) * 0.98;
@@ -411,7 +416,7 @@ async function main() {
       const topDown = overhead.beginRenderPass({
         colorAttachments: [
           {
-            view: offscreenContext.getCurrentTexture().createView(),
+            view: screenContext.getCurrentTexture().createView(),
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',

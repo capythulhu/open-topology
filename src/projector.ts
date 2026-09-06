@@ -1,13 +1,4 @@
-const display = document.querySelector<HTMLCanvasElement>('#screen')!;
-const canvas = display.transferControlToOffscreen();
-
-const size = () => ({
-  width: Math.floor(display.clientWidth * devicePixelRatio),
-  height: Math.floor(display.clientHeight * devicePixelRatio),
-});
-
-window.opener?.postMessage({ type: 'projector-canvas', canvas, ...size() }, '*', [canvas]);
-window.addEventListener('resize', () => window.opener?.postMessage({ type: 'projector-size', ...size() }, '*'));
+window.opener?.postMessage({ type: 'projector-ready' }, '*');
 window.addEventListener('beforeunload', () => window.opener?.postMessage({ type: 'projector-closed' }, '*'));
 
 const toggleFullscreen = () => {
