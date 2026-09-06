@@ -68,7 +68,10 @@ float contourMask(float h, float interval, float width) {
     return 1.0 - smoothstep(width - 0.5, width + 0.5, abs(frac(f - 0.5) - 0.5) / slope);
 }
 
+bool flatView() { return engine.flat > 0.5; }
+
 float shading(float2 uv) {
+    if (flatView()) return 1.0;
     return 0.35 + 0.65 * saturate(dot(normalAt(uv), normalize(float3(0.35, 1.0, 0.25))));
 }
 

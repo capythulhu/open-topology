@@ -32,6 +32,7 @@ struct Engine {
     float aspect;
     float heightMm;
     float cellMm;
+    float flat;
 }
 
 ConstantBuffer<Engine> engine;

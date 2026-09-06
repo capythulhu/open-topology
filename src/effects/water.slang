@@ -100,8 +100,8 @@ float4 fragmentMain(Varying v) : SV_Target {
 
     float3 light = normalize(float3(0.35, 1.0, 0.25));
     float3 normal = surfaceNormal(p);
-    float lambert = 0.45 + 0.55 * saturate(dot(normal, light));
-    float sparkle = pow(saturate(dot(normal, normalize(light + float3(0.0, 1.0, 0.0)))), 40.0);
+    float lambert = flatView() ? 1.0 : 0.45 + 0.55 * saturate(dot(normal, light));
+    float sparkle = flatView() ? 0.0 : pow(saturate(dot(normal, normalize(light + float3(0.0, 1.0, 0.0)))), 40.0);
 
     float sunk = saturate(depth * engine.heightMm / fadeMm);
     float3 tint = lerp(float3(0.16, 0.55, 0.62), float3(0.01, 0.09, 0.27), sunk);

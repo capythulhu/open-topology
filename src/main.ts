@@ -376,6 +376,7 @@ async function main() {
     values[5] = camera.pitch;
     values[6] = camera.zoom;
     values[7] = width / height;
+    values[10] = 0;
     const param = (name: string) => sources[activeSource].params.find((p) => p.name === name)?.value;
     values[8] =
       activeSource === 'kinect'
@@ -428,6 +429,7 @@ async function main() {
       values[5] = Math.PI / 2;
       values[6] = Math.min((2 * aspect) / (field.columns / longest), 2 / (field.rows / longest)) * 0.98;
       values[7] = aspect;
+      values[10] = 1;
       device.queue.writeBuffer(engine, 0, engineData);
 
       const overhead = device.createCommandEncoder();
