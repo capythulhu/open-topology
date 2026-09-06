@@ -409,6 +409,8 @@ async function main() {
     values[7] = width / height;
     values[10] = 0;
     values[13] = 0;
+    values[14] = 0;
+    values[15] = 0;
     const param = (name: string) => sources[activeSource].params.find((p) => p.name === name)?.value;
     values[8] =
       activeSource === 'kinect'
@@ -467,6 +469,8 @@ async function main() {
       values[11] = (warpState.centerX * field.columns) / longest;
       values[12] = (warpState.centerY * field.rows) / longest;
       values[13] = warpState.height / fieldMm;
+      values[14] = warpState.leanX;
+      values[15] = warpState.leanY;
       device.queue.writeBuffer(engine, 0, engineData);
 
       const overhead = device.createCommandEncoder();

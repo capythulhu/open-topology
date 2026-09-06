@@ -75,6 +75,25 @@ float filled(StructuredBuffer<uint> frame, int2 p) {
     return 0.0;
 }
 
+static const int STEPS = 10;
+static const float STEP_MM = 20.0;
+
+float2 raised(float2 footing, float lifted) {
+    float depth = ground.a * footing.x + ground.b * footing.y + ground.c;
+    return PRINCIPAL + (footing - PRINCIPAL) * depth / max(depth - lifted, 1.0);
+}
+
+float aboveAt(float2 footing, float lifted) {
+    int2 p = int2(raised(footing, lifted));
+    uint live = millimetres(depth, p);
+    if (live == 0u) return 0.0;
+    float base = ground.captured > 0.5
+        ? float(millimetres(reference, p))
+        : ground.a * float(p.x) + ground.b * float(p.y) + ground.c;
+    if (base == 0.0) return 0.0;
+    return max(base - float(live), 0.0) * parallax;
+}
+
 bool sample(int2 p, out float live, out float base) {
     live = filled(depth, p);
     if (live == 0.0) return false;
@@ -98,15 +117,22 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 span = float2(window * float(engine.size.x) / float(engine.size.y) * stretchX, window * stretchY);
     float2 footing = center + (uv - 0.5) * span;
 
-    float live = 0.0, base, before;
-    float2 p = footing;
-    for (int k = 0; k < 3; k++) {
-        before = live;
-        if (!sample(int2(p), live, base)) return;
-        float above = max(base - live, 0.0) * parallax;
-        p = PRINCIPAL + (footing - PRINCIPAL) * base / max(base - above, 1.0);
+    float lifted = 0.0;
+    if (parallax > 0.0) {
+        float low = 0.0, high = 0.0;
+        bool crossed = false;
+        for (int k = 1; k <= STEPS && !crossed; k++) {
+            high = float(k) * STEP_MM;
+            if (aboveAt(footing, high) < high) crossed = true; else low = high;
+        }
+        for (int k = 0; k < 4; k++) {
+            float mid = (low + high) * 0.5;
+            if (aboveAt(footing, mid) < mid) high = mid; else low = mid;
+        }
+        lifted = high;
     }
-    live = max(live, before);
+    float live, base;
+    if (!sample(int2(raised(footing, lifted)), live, base)) return;
 
     float deviation = base - live;
     float beyond = max(abs(deviation) - deadzone, 0.0);

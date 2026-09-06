@@ -126,6 +126,8 @@ export function renderStage(state: WarpState, aspect: number, fieldAspect: numbe
       }),
     );
   control('tilt', -15, 15);
+  control('leanX', -1, 1);
+  control('leanY', -1, 1);
   control('height', 0, 4000);
   control('centerX', -0.5, 0.5);
   control('centerY', -0.5, 0.5);
