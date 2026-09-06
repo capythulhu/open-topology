@@ -6,7 +6,10 @@ export type Settings = {
   params?: Record<string, Record<string, number>>;
   view?: { heightScale: number; spin: number };
   projector?: WarpState;
+  placement?: Placement;
 };
+
+export type Placement = { left: number; top: number; width: number; height: number };
 
 const KEY = 'open-topology.settings';
 

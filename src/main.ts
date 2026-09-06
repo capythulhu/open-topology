@@ -9,7 +9,7 @@ import * as gridModule from './grid.slang';
 import * as warpModule from './warp.slang';
 import { Warp, WARP_DEFAULT, type WarpState } from './warp';
 import { renderStage } from './stage';
-import { loadSettings, saveSettings } from './settings';
+import { loadSettings, saveSettings, type Placement } from './settings';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
 import * as bumps from './sources/bumps.slang';
@@ -99,6 +99,11 @@ async function main() {
   let grid = build({ grid: gridModule }).grid;
 
   const programs = () => ({ ...sources, ...effects, grid });
+  const oldCrop = saved.params?.kinect;
+  if (oldCrop?.cropSize !== undefined) {
+    oldCrop.cropWidth = (oldCrop.cropSize * 480 * (field.columns / field.rows) * (oldCrop.stretchX ?? 1)) / 640;
+    oldCrop.cropHeight = oldCrop.cropSize * (oldCrop.stretchY ?? 1);
+  }
   for (const [name, program] of Object.entries(programs())) {
     for (const [key, value] of Object.entries(saved.params?.[name] ?? {})) program.setParam(key, value);
   }
@@ -142,6 +147,7 @@ async function main() {
   let projectorDepth: GPUTexture | null = null;
   let warp: Warp | null = null;
   const warpState: WarpState = { ...WARP_DEFAULT, ...saved.projector };
+  let placement: Placement | null = saved.placement ?? null;
 
   const persist = () =>
     saveSettings({
@@ -152,6 +158,7 @@ async function main() {
       ),
       view: { ...view },
       projector: { ...warpState },
+      placement: placement ?? undefined,
     });
 
   const saveWarp = () => {
@@ -164,7 +171,14 @@ async function main() {
       projector.focus();
       return;
     }
-    projector = window.open('/projector.html', 'projector', 'popup,width=960,height=720');
+    const at = placement ?? { left: 100, top: 100, width: 960, height: 720 };
+    const features = `popup,left=${at.left},top=${at.top},width=${at.width},height=${at.height}`;
+    const screens = (navigator as { getScreenDetails?: () => Promise<unknown> }).getScreenDetails?.();
+    if (screens) {
+      screens.catch(() => {}).finally(() => (projector = window.open('/projector.html', 'projector', features)));
+    } else {
+      projector = window.open('/projector.html', 'projector', features);
+    }
   };
 
   window.addEventListener('message', (event) => {
@@ -179,6 +193,10 @@ async function main() {
       warp?.destroy();
       warp = null;
       draw();
+    }
+    if (data?.type === 'projector-placed') {
+      placement = { left: data.left, top: data.top, width: data.width, height: data.height };
+      persist();
     }
     if (data?.type === 'projector-ready' && projector) {
       screen = projector.document.querySelector<HTMLCanvasElement>('#screen');
@@ -264,7 +282,7 @@ async function main() {
   const measure = (frame: Uint8Array<ArrayBuffer>) => {
     const samples = new Uint16Array(frame.buffer);
     const value = (name: string) => sources.kinect.params.find((p) => p.name === name)?.value ?? 0.5;
-    const crop = { x: value('cropX'), y: value('cropY'), size: value('cropSize') };
+    const crop = { x: value('cropX'), y: value('cropY'), width: value('cropWidth'), height: value('cropHeight') };
     const reading = captured
       ? spreadAgainst(samples, captured, crop)
       : fitGround(samples, crop);
@@ -347,10 +365,8 @@ async function main() {
           preview.draw(frame, {
             x: value('cropX'),
             y: value('cropY'),
-            size: value('cropSize'),
-            aspect: field.columns / field.rows,
-            stretchX: value('stretchX'),
-            stretchY: value('stretchY'),
+            width: value('cropWidth'),
+            height: value('cropHeight'),
           });
         }
         if (first) {
@@ -417,7 +433,7 @@ async function main() {
 
     values[9] =
       activeSource === 'kinect'
-        ? ((param('cropSize') ?? 0.9) * 480 / field.rows) * Math.sqrt((param('stretchX') ?? 1) * (param('stretchY') ?? 1)) * sceneDepth * 0.001697
+        ? ((param('cropHeight') ?? 0.9) * 480 / field.rows) * sceneDepth * 0.001697
         : 400 / field.columns;
     device.queue.writeBuffer(engine, 0, engineData);
 

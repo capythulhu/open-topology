@@ -1,4 +1,14 @@
 window.opener?.postMessage({ type: 'projector-ready' }, '*');
+
+let placed = '';
+setInterval(() => {
+  if (document.fullscreenElement) return;
+  const placement = { left: window.screenX, top: window.screenY, width: window.outerWidth, height: window.outerHeight };
+  const key = JSON.stringify(placement);
+  if (key === placed) return;
+  placed = key;
+  window.opener?.postMessage({ type: 'projector-placed', ...placement }, '*');
+}, 1000);
 window.addEventListener('beforeunload', () => window.opener?.postMessage({ type: 'projector-closed' }, '*'));
 
 const toggleFullscreen = () => {

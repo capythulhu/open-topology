@@ -2,7 +2,7 @@ export type Ground = { a: number; b: number; c: number; spread: number };
 
 export type Reading = { spread: number; coverage: number };
 
-export type Crop = { x: number; y: number; size: number };
+export type Crop = { x: number; y: number; width: number; height: number };
 
 const WIDTH = 640;
 const HEIGHT = 480;
@@ -38,14 +38,15 @@ function medianAbs(values: Float64Array, count: number): number {
 export function fitGround(samples: Uint16Array, crop: Crop): { ground: Ground | null; coverage: number } {
   const cx = crop.x * WIDTH;
   const cy = crop.y * HEIGHT;
-  const half = (crop.size * HEIGHT) / 2;
+  const halfW = (crop.width * WIDTH) / 2;
+  const halfH = (crop.height * HEIGHT) / 2;
 
-  const points = new Float64Array(((2 * half) / 3 + 1) ** 2 * 3);
+  const points = new Float64Array(((2 * halfW) / 3 + 1) * ((2 * halfH) / 3 + 1) * 3);
   let count = 0;
   let looked = 0;
 
-  for (let y = Math.max(0, cy - half) | 0; y < Math.min(HEIGHT, cy + half); y += 3) {
-    for (let x = Math.max(0, cx - half) | 0; x < Math.min(WIDTH, cx + half); x += 3) {
+  for (let y = Math.max(0, cy - halfH) | 0; y < Math.min(HEIGHT, cy + halfH); y += 3) {
+    for (let x = Math.max(0, cx - halfW) | 0; x < Math.min(WIDTH, cx + halfW); x += 3) {
       const z = samples[y * WIDTH + x];
       looked++;
       if (z === 0) continue;
@@ -100,14 +101,15 @@ export function fitGround(samples: Uint16Array, crop: Crop): { ground: Ground | 
 export function spreadAgainst(samples: Uint16Array, reference: Uint16Array, crop: Crop): Reading {
   const cx = crop.x * WIDTH;
   const cy = crop.y * HEIGHT;
-  const half = (crop.size * HEIGHT) / 2;
+  const halfW = (crop.width * WIDTH) / 2;
+  const halfH = (crop.height * HEIGHT) / 2;
 
   const deviations: number[] = [];
   let looked = 0;
   let seen = 0;
 
-  for (let y = Math.max(0, cy - half) | 0; y < Math.min(HEIGHT, cy + half); y += 3) {
-    for (let x = Math.max(0, cx - half) | 0; x < Math.min(WIDTH, cx + half); x += 3) {
+  for (let y = Math.max(0, cy - halfH) | 0; y < Math.min(HEIGHT, cy + halfH); y += 3) {
+    for (let x = Math.max(0, cx - halfW) | 0; x < Math.min(WIDTH, cx + halfW); x += 3) {
       const i = y * WIDTH + x;
       looked++;
       if (samples[i] === 0) continue;

@@ -17,10 +17,8 @@ ConstantBuffer<Ground> ground;
 [Param(0.8, 0.0, 0.95)] uniform float smoothing;
 [Param(0.5, 0.0, 1.0)]  uniform float cropX;
 [Param(0.5, 0.0, 1.0)]  uniform float cropY;
-[Param(0.9, 0.1, 1.0)]  uniform float cropSize;
-[Param(1.0, 0.5, 2.0)]  uniform float stretchX;
-[Param(1.0, 0.5, 2.0)]  uniform float stretchY;
-[Param(1.0, 0.0, 1.0)]  uniform float parallax;
+[Param(0.9, 0.1, 1.0)]  uniform float cropWidth;
+[Param(0.9, 0.1, 1.0)]  uniform float cropHeight;
 
 uint indexOf(int2 p) {
     int2 q = clamp(p, int2(0), int2(DEPTH_WIDTH - 1, DEPTH_HEIGHT - 1));
@@ -91,7 +89,7 @@ float aboveAt(float2 footing, float lifted) {
         ? float(millimetres(reference, p))
         : ground.a * float(p.x) + ground.b * float(p.y) + ground.c;
     if (base == 0.0) return 0.0;
-    return max(base - float(live), 0.0) * parallax;
+    return max(base - float(live), 0.0);
 }
 
 bool sample(int2 p, out float live, out float base) {
@@ -113,26 +111,21 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 uv = (float2(tid.xy) + 0.5) / float2(engine.size);
     float2 center = float2(cropX * float(DEPTH_WIDTH), cropY * float(DEPTH_HEIGHT));
 
-    float window = cropSize * float(DEPTH_HEIGHT);
-    float2 span = float2(window * float(engine.size.x) / float(engine.size.y) * stretchX, window * stretchY);
+    float2 span = float2(cropWidth * float(DEPTH_WIDTH), cropHeight * float(DEPTH_HEIGHT));
     float2 footing = center + (uv - 0.5) * span;
 
-    float lifted = 0.0;
-    if (parallax > 0.0) {
-        float low = 0.0, high = 0.0;
-        bool crossed = false;
-        for (int k = 1; k <= STEPS && !crossed; k++) {
-            high = float(k) * STEP_MM;
-            if (aboveAt(footing, high) < high) crossed = true; else low = high;
-        }
-        for (int k = 0; k < 4; k++) {
-            float mid = (low + high) * 0.5;
-            if (aboveAt(footing, mid) < mid) high = mid; else low = mid;
-        }
-        lifted = high;
+    float low = 0.0, high = 0.0;
+    bool crossed = false;
+    for (int k = 1; k <= STEPS && !crossed; k++) {
+        high = float(k) * STEP_MM;
+        if (aboveAt(footing, high) < high) crossed = true; else low = high;
+    }
+    for (int k = 0; k < 4; k++) {
+        float mid = (low + high) * 0.5;
+        if (aboveAt(footing, mid) < mid) high = mid; else low = mid;
     }
     float live, base;
-    if (!sample(int2(raised(footing, lifted)), live, base)) return;
+    if (!sample(int2(raised(footing, high)), live, base)) return;
 
     float deviation = base - live;
     float beyond = max(abs(deviation) - deadzone, 0.0);
