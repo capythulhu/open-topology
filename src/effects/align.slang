@@ -22,6 +22,7 @@ struct Mark {
 }
 
 RWStructuredBuffer<Region> regions;
+RWStructuredBuffer<uint> rowRoots;
 RWStructuredBuffer<Mark> marks;
 
 [shader("compute")]
@@ -53,12 +54,22 @@ bool qualifies(uint i) { return owner[i].load() == i && float(regions[i].count.l
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
+void countRows(uint3 tid: SV_DispatchThreadID) {
+    if (tid.x != 0 || tid.y >= engine.size.y) return;
+    uint found = 0;
+    for (uint x = 0; x < engine.size.x; x++) if (qualifies(cellIndex(uint2(x, tid.y)))) found++;
+    rowRoots[tid.y] = found;
+}
+
+[shader("compute")]
+[numthreads(8, 8, 1)]
 void place(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
     uint i = cellIndex(tid.xy);
     if (!qualifies(i)) return;
     uint rank = 0;
-    for (uint j = 0; j < i; j++) if (qualifies(j)) rank++;
+    for (uint y = 0; y < tid.y; y++) rank += rowRoots[y];
+    for (uint x = 0; x < tid.x; x++) if (qualifies(cellIndex(uint2(x, tid.y)))) rank++;
     if (rank >= MAX_MARKS) return;
     float count = float(regions[i].count.load());
     Mark m;

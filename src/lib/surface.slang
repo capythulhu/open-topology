@@ -31,8 +31,6 @@ float3 orbit(float3 p) {
 }
 
 float4 project(float3 world) {
-    world.x += world.y * engine.leanX;
-    world.z += world.y * engine.leanY;
     if (engine.eyeHeight > 0.0) {
         float k = engine.eyeHeight / max(engine.eyeHeight - world.y, 0.05);
         world.x = engine.eyeX + (world.x - engine.eyeX) * k;

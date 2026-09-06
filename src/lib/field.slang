@@ -36,8 +36,6 @@ struct Engine {
     float eyeX;
     float eyeY;
     float eyeHeight;
-    float leanX;
-    float leanY;
 }
 
 ConstantBuffer<Engine> engine;
