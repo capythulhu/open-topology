@@ -65,6 +65,6 @@ Only one reader can hold the device at a time, so a second dev server or a stray
 
 ## Status
 
-Early, but it runs. Live Kinect depth or animated noise, in 3D, with nine effects — including a shallow-water simulation, a wind tunnel, one that measures each object in mm, cm², and mL, and one that boxes each object and reports its dimensions. Every panel setting is saved to a local file and restored on the next start. A projector window shows the effect top-down, ready to drag onto a second display and fullscreen, with a small alignment widget in the panel to offset, stretch, rotate, and mirror the image onto the sand; four-corner keystone calibration is not built yet.
+Early, but it runs. Live Kinect depth or animated noise, in 3D, with ten effects — including a shallow-water simulation, a wind tunnel, one that measures each object in mm, cm², and mL, and one that boxes each object and reports its dimensions. Every panel setting is saved to a local file and restored on the next start. A projector window shows the effect top-down, ready to drag onto a second display and fullscreen, with a small alignment widget in the panel to offset, stretch, rotate, and mirror the image onto the sand; four-corner keystone calibration is not built yet.
 
 MIT.
