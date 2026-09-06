@@ -320,6 +320,8 @@ async function main() {
             y: value('cropY'),
             size: value('cropSize'),
             aspect: field.columns / field.rows,
+            stretchX: value('stretchX'),
+            stretchY: value('stretchY'),
           });
         }
         if (first) {
@@ -385,7 +387,7 @@ async function main() {
 
     values[9] =
       activeSource === 'kinect'
-        ? ((param('cropSize') ?? 0.9) * 480 / field.rows) * sceneDepth * 0.001697
+        ? ((param('cropSize') ?? 0.9) * 480 / field.rows) * Math.sqrt((param('stretchX') ?? 1) * (param('stretchY') ?? 1)) * sceneDepth * 0.001697
         : 400 / field.columns;
     device.queue.writeBuffer(engine, 0, engineData);
 

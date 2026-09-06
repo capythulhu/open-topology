@@ -5,7 +5,7 @@ const DEPTH_HEIGHT = 480;
 
 export type Preview = {
   element: HTMLCanvasElement;
-  draw: (frame: Uint8Array<ArrayBuffer>, crop: { x: number; y: number; size: number; aspect: number }) => void;
+  draw: (frame: Uint8Array<ArrayBuffer>, crop: { x: number; y: number; size: number; aspect: number; stretchX: number; stretchY: number }) => void;
 };
 
 export function createPreview(): Preview {
@@ -45,8 +45,8 @@ export function createPreview(): Preview {
     context.putImageData(image, 0, 0);
 
     const window = crop.size * DEPTH_HEIGHT;
-    const w = (window * crop.aspect * WIDTH) / DEPTH_WIDTH;
-    const h = (window * HEIGHT) / DEPTH_HEIGHT;
+    const w = (window * crop.aspect * crop.stretchX * WIDTH) / DEPTH_WIDTH;
+    const h = (window * crop.stretchY * HEIGHT) / DEPTH_HEIGHT;
     context.strokeStyle = '#6aa9ff';
     context.lineWidth = 1;
     context.strokeRect(crop.x * WIDTH - w / 2, crop.y * HEIGHT - h / 2, w, h);

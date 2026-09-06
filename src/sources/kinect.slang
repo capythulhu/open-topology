@@ -17,6 +17,8 @@ ConstantBuffer<Ground> ground;
 [Param(0.5, 0.0, 1.0)]  uniform float cropX;
 [Param(0.5, 0.0, 1.0)]  uniform float cropY;
 [Param(0.9, 0.1, 1.0)]  uniform float cropSize;
+[Param(1.0, 0.5, 2.0)]  uniform float stretchX;
+[Param(1.0, 0.5, 2.0)]  uniform float stretchY;
 
 uint indexOf(int2 p) {
     int2 q = clamp(p, int2(0), int2(DEPTH_WIDTH - 1, DEPTH_HEIGHT - 1));
@@ -80,7 +82,7 @@ void generate(uint3 tid: SV_DispatchThreadID) {
     float2 center = float2(cropX * float(DEPTH_WIDTH), cropY * float(DEPTH_HEIGHT));
 
     float window = cropSize * float(DEPTH_HEIGHT);
-    float2 span = float2(window * float(engine.size.x) / float(engine.size.y), window);
+    float2 span = float2(window * float(engine.size.x) / float(engine.size.y) * stretchX, window * stretchY);
     int2 p = int2(center + (uv - 0.5) * span);
 
     float live = filled(depth, p);
