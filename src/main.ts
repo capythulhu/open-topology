@@ -24,6 +24,7 @@ import * as wind from './effects/wind.slang';
 import * as tomography from './effects/tomography.slang';
 import * as water from './effects/water.slang';
 import * as domes from './effects/domes.slang';
+import * as align from './effects/align.slang';
 
 const ENGINE_BYTES = 64;
 const DEPTH_BYTES = 640 * 480 * 2;
@@ -36,7 +37,7 @@ const FIELDS: Record<string, { columns: number; rows: number }> = {
 };
 
 const SOURCES: Record<string, SlangModule> = { bumps, noise, kinect };
-const EFFECTS: Record<string, SlangModule> = { contours, measure, cage, domes, tomography, wind, water, sparks, normals, raw };
+const EFFECTS: Record<string, SlangModule> = { contours, measure, cage, domes, align, tomography, wind, water, sparks, normals, raw };
 
 async function main() {
   const canvas = document.querySelector<HTMLCanvasElement>('#view')!;

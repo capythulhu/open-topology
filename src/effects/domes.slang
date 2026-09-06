@@ -3,7 +3,7 @@
 
 [Param(80.0, 4.0, 3000.0)] uniform float minCells;
 [Param(1.0, 0.0, 3.0)]     uniform float speed;
-[Param(1.0, 0.5, 2.0)]     uniform float fullness;
+[Param(1.1, 0.5, 2.0)]     uniform float fullness;
 
 static const float QUANTA = 4096.0;
 static const uint MAX_DOMES = 16;
