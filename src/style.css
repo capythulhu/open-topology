@@ -84,3 +84,58 @@ button:hover { background: #2a2e37; }
 .head { display: flex; justify-content: space-between; }
 .head output { color: #8a8f9a; font-variant-numeric: tabular-nums; }
 input[type='range'] { width: 100%; accent-color: #6aa9ff; }
+
+.stage {
+  position: relative;
+  width: 100%;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: #1e2128;
+  border: 1px solid #2f333c;
+  overflow: hidden;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+.stage:focus { outline: 1px solid #6aa9ff; }
+.screen {
+  position: absolute;
+  left: 15%;
+  top: 15%;
+  width: 70%;
+  height: 70%;
+  background: #000;
+  outline: 1px solid #3a3f4a;
+}
+.frame {
+  position: absolute;
+  border: 1px solid #6aa9ff;
+  background: #6aa9ff22;
+}
+.mark {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  margin-left: -14px;
+  width: 28px;
+  text-align: center;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6aa9ff;
+}
+.handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #6aa9ff;
+  border-radius: 2px;
+  cursor: nwse-resize;
+}
+.handle.nw { top: 0; left: 0; }
+.handle.ne { top: 0; right: 0; cursor: nesw-resize; }
+.handle.sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.handle.se { bottom: 0; right: 0; }
+.tools { display: flex; gap: 6px; }
+.tools button { margin-top: 0; padding: 4px 0; font-size: 15px; }
+.hint { margin: 0 0 4px; font-size: 11px; color: #8a8f9a; }

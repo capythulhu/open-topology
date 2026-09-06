@@ -19,6 +19,7 @@ export type Panel = {
   onEffect: (name: string) => void;
   groups: Group[];
   actions: { label: string; onClick: () => void }[];
+  projector: HTMLElement | null;
   notice: string;
 };
 
@@ -97,6 +98,12 @@ export function renderPanel(root: HTMLElement, panel: Panel) {
     button.textContent = action.label;
     button.addEventListener('click', action.onClick);
     root.append(button);
+  }
+
+  if (panel.projector) {
+    const heading = document.createElement('h2');
+    heading.textContent = 'projector';
+    root.append(heading, panel.projector);
   }
 
   for (const group of panel.groups) {

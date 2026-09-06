@@ -6,6 +6,9 @@ import { fitGround, spreadAgainst } from './sources/ground';
 import { createStabilizer, drawLabels, parseLabels, LABELS_BYTES } from './labels';
 import { createPreview } from './sources/preview';
 import * as gridModule from './grid.slang';
+import * as warpModule from './warp.slang';
+import { Warp, WARP_DEFAULT, type WarpState } from './warp';
+import { renderStage } from './stage';
 import { bridgeReady, streamDepth, type DepthStream } from './sources/kinect';
 import * as noise from './sources/noise.slang';
 import * as bumps from './sources/bumps.slang';
@@ -22,6 +25,7 @@ import * as water from './effects/water.slang';
 
 const ENGINE_BYTES = 48;
 const DEPTH_BYTES = 640 * 480 * 2;
+const WARP_KEY = 'open-topology.projector';
 
 const FIELDS: Record<string, { columns: number; rows: number }> = {
   '256 x 256': { columns: 256, rows: 256 },
@@ -127,6 +131,12 @@ async function main() {
   let screen: HTMLCanvasElement | null = null;
   let screenContext: GPUCanvasContext | null = null;
   let projectorDepth: GPUTexture | null = null;
+  let warp: Warp | null = null;
+  const warpState: WarpState = { ...WARP_DEFAULT, ...JSON.parse(localStorage.getItem(WARP_KEY) ?? '{}') };
+  const saveWarp = () => {
+    localStorage.setItem(WARP_KEY, JSON.stringify(warpState));
+    warp?.set(warpState);
+  };
 
   const openProjector = () => {
     if (projector && !projector.closed) {
@@ -145,6 +155,9 @@ async function main() {
       screenContext = null;
       projectorDepth?.destroy();
       projectorDepth = null;
+      warp?.destroy();
+      warp = null;
+      draw();
     }
     if (data?.type === 'projector-ready' && projector) {
       screen = projector.document.querySelector<HTMLCanvasElement>('#screen');
@@ -157,11 +170,15 @@ async function main() {
     if (!screen) return;
     const width = Math.max(1, screen.clientWidth);
     const height = Math.max(1, screen.clientHeight);
-    if (projectorDepth && screen.width === width && screen.height === height) return;
+    if (warp && screen.width === width && screen.height === height) return;
     screen.width = width;
     screen.height = height;
     projectorDepth?.destroy();
     projectorDepth = createDepth(device, width, height);
+    warp?.destroy();
+    warp = new Warp(device, warpModule, format, width, height);
+    warp.set(warpState);
+    draw();
   };
 
   const draw = () => {
@@ -189,8 +206,9 @@ async function main() {
                 { label: 'clear calibration', onClick: clearCalibration },
               ]
             : [{ label: 'calibrate on the flat surface', onClick: calibrate }]),
-        { label: 'open projector window', onClick: openProjector },
+        { label: projector && !projector.closed ? 'focus projector window' : 'open projector window', onClick: openProjector },
       ],
+      projector: warp ? renderStage(warpState, warp.frame.width / warp.frame.height, field.columns / field.rows, saveWarp) : null,
       groups: [
         { title: activeSource, params: sources[activeSource].params, onChange: (n, v) => sources[activeSource].setParam(n, v) },
         { title: activeEffect, params: effects[activeEffect].params, onChange: (n, v) => effects[activeEffect].setParam(n, v) },
@@ -403,7 +421,7 @@ async function main() {
     device.queue.submit([encoder.finish()]);
 
     fitProjector();
-    if (projector && !projector.closed && screen && screenContext && projectorDepth) {
+    if (projector && !projector.closed && screen && screenContext && projectorDepth && warp) {
       const longest = Math.max(field.columns, field.rows);
       const aspect = screen.width / screen.height;
       values[4] = 0;
@@ -416,7 +434,7 @@ async function main() {
       const topDown = overhead.beginRenderPass({
         colorAttachments: [
           {
-            view: screenContext.getCurrentTexture().createView(),
+            view: warp.frame.createView(),
             clearValue: { r: 0, g: 0, b: 0, a: 1 },
             loadOp: 'clear',
             storeOp: 'store',
@@ -432,6 +450,11 @@ async function main() {
       grid.draw(topDown, field.columns, field.rows);
       effect.draw(topDown, field.columns, field.rows);
       topDown.end();
+      const warped = overhead.beginRenderPass({
+        colorAttachments: [{ view: screenContext.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store' }],
+      });
+      warp.draw(warped);
+      warped.end();
       device.queue.submit([overhead.finish()]);
     }
 
