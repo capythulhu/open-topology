@@ -7,18 +7,16 @@
 [Param(6.0, 2.0, 24.0)]    uniform float wire;
 
 static const float QUANTA = 4096.0;
-static const float FINE = 16.0;
-static const uint MAX_BOXES = 8;
-static const uint MAX_LINKS = MAX_BOXES * (MAX_BOXES - 1) / 2;
-static const uint EDGE_VERTICES = MAX_BOXES * 12 * 6;
+static const uint MAX_ANCHORS = 8;
+static const uint MAX_LINKS = MAX_ANCHORS * (MAX_ANCHORS - 1) / 2;
 static const uint LINK_VERTICES = MAX_LINKS * 6;
 
 void pairOf(uint k, out uint first, out uint second) {
     uint pair = 0;
     first = 0;
     second = 0;
-    for (uint a = 0; a < MAX_BOXES; a++) {
-        for (uint b = a + 1; b < MAX_BOXES; b++) {
+    for (uint a = 0; a < MAX_ANCHORS; a++) {
+        for (uint b = a + 1; b < MAX_ANCHORS; b++) {
             if (pair == k) {
                 first = a;
                 second = b;
@@ -33,28 +31,17 @@ struct Region {
     Atomic<uint> sumX;
     Atomic<uint> sumY;
     Atomic<uint> peak;
-    Atomic<int> xx;
-    Atomic<int> yy;
-    Atomic<int> xy;
-    Atomic<int> minA;
-    Atomic<int> maxA;
-    Atomic<int> minB;
-    Atomic<int> maxB;
-    float axisX;
-    float axisY;
 }
 
-struct Box {
+struct Anchor {
     float2 centre;
-    float2 axis;
-    float2 half;
     float height;
     float shown;
 }
 
 RWStructuredBuffer<Region> regions;
-RWStructuredBuffer<Box> boxes;
-[Snapshot("boxes")] StructuredBuffer<Box> cages;
+RWStructuredBuffer<Anchor> anchors;
+[Snapshot("anchors")] StructuredBuffer<Anchor> ends;
 RWStructuredBuffer<Atomic<uint>> taken;
 [Labels] RWStructuredBuffer<Label> labels;
 
@@ -71,14 +58,7 @@ void reset(uint3 tid: SV_DispatchThreadID) {
     regions[i].sumX.store(0);
     regions[i].sumY.store(0);
     regions[i].peak.store(0);
-    regions[i].xx.store(0);
-    regions[i].yy.store(0);
-    regions[i].xy.store(0);
-    regions[i].minA.store(0x7FFFFFFF);
-    regions[i].maxA.store(-0x7FFFFFFF);
-    regions[i].minB.store(0x7FFFFFFF);
-    regions[i].maxB.store(-0x7FFFFFFF);
-    if (i < MAX_BOXES) boxes[i].shown = 0.0;
+    if (i < MAX_ANCHORS) anchors[i].shown = 0.0;
     if (i < MAX_LABELS) labels[i].shown = 0;
     if (i == 0) taken[0].store(0);
 }
@@ -97,86 +77,20 @@ void centroid(uint3 tid: SV_DispatchThreadID) {
 
 [shader("compute")]
 [numthreads(8, 8, 1)]
-void spread(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint root = owner[cellIndex(tid.xy)].load();
-    if (root == NONE) return;
-    float2 d = float2(tid.xy) - centreOf(root);
-    regions[root].xx.add(int(d.x * d.x * 0.25));
-    regions[root].yy.add(int(d.y * d.y * 0.25));
-    regions[root].xy.add(int(d.x * d.y * 0.25));
-}
-
-[shader("compute")]
-[numthreads(8, 8, 1)]
-void orient(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint i = cellIndex(tid.xy);
-    if (owner[i].load() != i) return;
-    float xx = float(regions[i].xx.load());
-    float yy = float(regions[i].yy.load());
-    float xy = float(regions[i].xy.load());
-    float theta = 0.5 * atan2(2.0 * xy, xx - yy);
-    regions[i].axisX = cos(theta);
-    regions[i].axisY = sin(theta);
-}
-
-[shader("compute")]
-[numthreads(8, 8, 1)]
-void extents(uint3 tid: SV_DispatchThreadID) {
-    if (any(tid.xy >= engine.size)) return;
-    uint root = owner[cellIndex(tid.xy)].load();
-    if (root == NONE) return;
-    float2 axis = float2(regions[root].axisX, regions[root].axisY);
-    float2 d = float2(tid.xy) - centreOf(root);
-    int a = int(dot(d, axis) * FINE);
-    int b = int(dot(d, float2(-axis.y, axis.x)) * FINE);
-    regions[root].minA.min(a);
-    regions[root].maxA.max(a);
-    regions[root].minB.min(b);
-    regions[root].maxB.max(b);
-}
-
-[shader("compute")]
-[numthreads(8, 8, 1)]
-void annotate(uint3 tid: SV_DispatchThreadID) {
+void anchor(uint3 tid: SV_DispatchThreadID) {
     if (any(tid.xy >= engine.size)) return;
     uint i = cellIndex(tid.xy);
     if (owner[i].load() != i) return;
     if (float(regions[i].count.load()) < minCells) return;
 
     uint slot = taken[0].add(1u);
-    if (slot >= MAX_BOXES) return;
+    if (slot >= MAX_ANCHORS) return;
 
-    float2 axis = float2(regions[i].axisX, regions[i].axisY);
-    float2 lo = float2(regions[i].minA.load(), regions[i].minB.load()) / FINE;
-    float2 hi = float2(regions[i].maxA.load(), regions[i].maxB.load()) / FINE;
-    float2 half = (hi - lo) * 0.5 + 0.5;
-    float2 shift = (hi + lo) * 0.5;
-    float peak = float(regions[i].peak.load()) / QUANTA;
-
-    Box box;
-    box.centre = centreOf(i) + axis * shift.x + float2(-axis.y, axis.x) * shift.y;
-    box.axis = axis;
-    box.half = half;
-    box.height = peak;
-    box.shown = 1.0;
-    boxes[slot] = box;
-
-    float angle = degrees(atan2(axis.y, axis.x));
-    if (angle < 0.0) angle += 180.0;
-
-    Label label;
-    label.cell = box.centre;
-    label.height = peak;
-    label.shown = 1;
-
-    label.tag = TAG_L; label.unit = UNIT_MM; label.value = half.x * 2.0 * engine.cellMm; label.line = 0;
-    labels[slot * 3] = label;
-    label.tag = TAG_W; label.value = half.y * 2.0 * engine.cellMm; label.line = 1;
-    labels[slot * 3 + 1] = label;
-    label.tag = TAG_NONE; label.unit = UNIT_DEG; label.value = angle; label.line = 2;
-    labels[slot * 3 + 2] = label;
+    Anchor a;
+    a.centre = centreOf(i);
+    a.height = float(regions[i].peak.load()) / QUANTA;
+    a.shown = 1.0;
+    anchors[slot] = a;
 }
 
 [shader("compute")]
@@ -188,8 +102,8 @@ void link(uint3 tid: SV_DispatchThreadID) {
 
     uint first, second;
     pairOf(k, first, second);
-    Box from = boxes[first];
-    Box to = boxes[second];
+    Anchor from = anchors[first];
+    Anchor to = anchors[second];
     if (from.shown < 0.5 || to.shown < 0.5) return;
 
     float2 across = (to.centre - from.centre) * engine.cellMm;
@@ -203,7 +117,7 @@ void link(uint3 tid: SV_DispatchThreadID) {
     label.tag = TAG_NONE;
     label.line = 0;
     label.shown = 1;
-    labels[MAX_BOXES * 3 + k] = label;
+    labels[k] = label;
 }
 
 struct Wire {
@@ -214,20 +128,6 @@ struct Wire {
 
 static const uint2 QUAD[6] = { uint2(0, 0), uint2(1, 0), uint2(0, 1), uint2(1, 0), uint2(1, 1), uint2(0, 1) };
 static const float2 CORNERS[6] = { float2(-1, -1), float2(1, -1), float2(-1, 1), float2(1, -1), float2(1, 1), float2(-1, 1) };
-
-static const uint2 EDGES[12] = {
-    uint2(0, 1), uint2(1, 3), uint2(3, 2), uint2(2, 0),
-    uint2(4, 5), uint2(5, 7), uint2(7, 6), uint2(6, 4),
-    uint2(0, 4), uint2(1, 5), uint2(2, 6), uint2(3, 7),
-};
-
-float3 cornerWorld(Box box, uint corner) {
-    float along = (corner & 1u) != 0u ? box.half.x : -box.half.x;
-    float across = (corner & 2u) != 0u ? box.half.y : -box.half.y;
-    float h = (corner & 4u) != 0u ? box.height : 0.0;
-    float2 cell = box.centre + box.axis * along + float2(-box.axis.y, box.axis.x) * across;
-    return pointWorld(cell, h);
-}
 
 float4 ribbon(float3 a, float3 b, float2 corner, float width) {
     float4 from = project(a);
@@ -240,7 +140,7 @@ float4 ribbon(float3 a, float3 b, float2 corner, float width) {
 
 [shader("vertex")]
 [PerCell(6)]
-[Vertices(744)]
+[Vertices(168)]
 Wire vertexMain(uint vid: SV_VertexID) {
     Wire o;
     o.uv = float2(0.0);
@@ -261,37 +161,22 @@ Wire vertexMain(uint vid: SV_VertexID) {
     }
 
     uint e = vid - cells * 6;
-    float2 corner = CORNERS[e % 6];
-
-    if (e < EDGE_VERTICES) {
-        Box box = cages[e / 72];
-        if (box.shown < 0.5) {
-            o.clip = CULLED;
-            return o;
-        }
-        uint2 ends = EDGES[(e / 6) % 12];
-        o.clip = ribbon(cornerWorld(box, ends.x), cornerWorld(box, ends.y), corner, 0.0032);
-        o.edge = 1.0;
-        return o;
-    }
-
     uint first, second;
-    pairOf((e - EDGE_VERTICES) / 6, first, second);
-    Box from = cages[first];
-    Box to = cages[second];
+    pairOf(e / 6, first, second);
+    Anchor from = ends[first];
+    Anchor to = ends[second];
     if (from.shown < 0.5 || to.shown < 0.5) {
         o.clip = CULLED;
         return o;
     }
-    o.clip = ribbon(pointWorld(from.centre, from.height), pointWorld(to.centre, to.height), corner, 0.0016);
-    o.edge = 2.0;
+    o.clip = ribbon(pointWorld(from.centre, from.height), pointWorld(to.centre, to.height), CORNERS[e % 6], 0.0016);
+    o.edge = 1.0;
     return o;
 }
 
 [shader("fragment")]
 float4 fragmentMain(Wire w) : SV_Target {
-    if (w.edge > 1.5) return float4(1.0, 1.0, 1.0, 1.0);
-    if (w.edge > 0.5) return float4(0.85, 0.97, 1.0, 1.0);
+    if (w.edge > 0.5) return float4(1.0, 1.0, 1.0, 1.0);
 
     int2 p = cellOf(w.uv);
     uint root = ownerAt(p);
