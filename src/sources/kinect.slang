@@ -2,8 +2,6 @@
 
 static const uint DEPTH_WIDTH = 640;
 static const uint DEPTH_HEIGHT = 480;
-static const float FOCAL = 585.0;
-static const float2 PRINCIPAL = float2(320.0, 240.0);
 
 struct Ground { float a; float b; float c; float spread; float captured; }
 
@@ -19,17 +17,6 @@ ConstantBuffer<Ground> ground;
 [Param(0.5, 0.0, 1.0)]  uniform float cropX;
 [Param(0.5, 0.0, 1.0)]  uniform float cropY;
 [Param(0.9, 0.1, 1.0)]  uniform float cropSize;
-[Param(1.0, 0.0, 1.0)]  uniform float perspective;
-
-float planeDepth(float2 p) { return ground.a * p.x + ground.b * p.y + ground.c; }
-
-float2 onPlane(float2 p) { return (p - PRINCIPAL) * planeDepth(p) / FOCAL; }
-
-float2 pixelSeeing(float2 world, float2 guess) {
-    float2 p = guess;
-    for (int i = 0; i < 3; i++) p = PRINCIPAL + world * FOCAL / planeDepth(p);
-    return p;
-}
 
 uint indexOf(int2 p) {
     int2 q = clamp(p, int2(0), int2(DEPTH_WIDTH - 1, DEPTH_HEIGHT - 1));
@@ -94,10 +81,7 @@ void generate(uint3 tid: SV_DispatchThreadID) {
 
     float window = cropSize * float(DEPTH_HEIGHT);
     float2 span = float2(window * float(engine.size.x) / float(engine.size.y), window);
-    float2 flat = center + (uv - 0.5) * span;
-    float2 world = onPlane(center) + (uv - 0.5) * span * planeDepth(center) / FOCAL;
-    float correct = planeDepth(center) > 1.0 ? perspective : 0.0;
-    int2 p = int2(lerp(flat, pixelSeeing(world, flat), correct));
+    int2 p = int2(center + (uv - 0.5) * span);
 
     float live = filled(depth, p);
     if (live == 0.0) return;

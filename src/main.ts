@@ -2,7 +2,7 @@ import { createCamera } from './camera';
 import { createDepth, initGpu } from './gpu';
 import { renderPanel } from './panel';
 import { Program, type SlangModule } from './program';
-import { fitGround, spreadAgainst, type Ground } from './sources/ground';
+import { fitGround, spreadAgainst } from './sources/ground';
 import { createStabilizer, drawLabels, parseLabels, LABELS_BYTES } from './labels';
 import { createPreview } from './sources/preview';
 import * as gridModule from './grid.slang';
@@ -231,7 +231,6 @@ async function main() {
   const groundData = new Float32Array(8);
   const ground = { a: 0, b: 0, c: 0, spread: 0 };
   let captured: Uint16Array | null = null;
-  let capturedGround: Ground | null = null;
   let sceneDepth = 1000;
 
   const measure = (frame: Uint8Array<ArrayBuffer>) => {
@@ -242,7 +241,7 @@ async function main() {
       ? spreadAgainst(samples, captured, crop)
       : fitGround(samples, crop);
     const coverage = reading.coverage;
-    const fitted = 'ground' in reading ? reading.ground : capturedGround && { ...capturedGround, spread: reading.spread };
+    const fitted = 'ground' in reading ? reading.ground : { a: 0, b: 0, c: 0, spread: reading.spread };
 
     const complaint =
       coverage < 0.25
@@ -273,8 +272,6 @@ async function main() {
   const calibrate = () => {
     if (!latest) return;
     captured = new Uint16Array(latest.slice().buffer);
-    const value = (name: string) => sources.kinect.params.find((p) => p.name === name)?.value ?? 0.5;
-    capturedGround = fitGround(captured, { x: value('cropX'), y: value('cropY'), size: value('cropSize') }).ground;
     device.queue.writeBuffer(reference, 0, latest);
     ground.spread = 0;
     draw();
@@ -282,7 +279,6 @@ async function main() {
 
   const clearCalibration = () => {
     captured = null;
-    capturedGround = null;
     ground.spread = 0;
     draw();
   };
